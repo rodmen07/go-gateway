@@ -42,14 +42,14 @@ func Load() Config {
 		RateLimitRPS: rps,
 
 		TasksURL:         getenv("TASKS_URL", "https://backend-service-rodmen07-v2.fly.dev"),
-		AccountsURL:      getenv("ACCOUNTS_URL", "https://accounts-service.fly.dev"),
-		ContactsURL:      getenv("CONTACTS_URL", "https://contacts-service.fly.dev"),
-		OpportunitiesURL: getenv("OPPORTUNITIES_URL", "https://taskforge-opportunities-service.fly.dev"),
-		ActivitiesURL:    getenv("ACTIVITIES_URL", "https://taskforge-activities-service.fly.dev"),
-		AutomationURL:    getenv("AUTOMATION_URL", "https://taskforge-automation-service.fly.dev"),
-		IntegrationsURL:  getenv("INTEGRATIONS_URL", "https://taskforge-integrations-service.fly.dev"),
-		ReportingURL:     getenv("REPORTING_URL", "https://taskforge-reporting-service.fly.dev"),
-		SearchURL:        getenv("SEARCH_URL", "https://taskforge-search-service.fly.dev"),
+		AccountsURL:      getenv("ACCOUNTS_URL", "https://accounts-service-5gcrg4oiza-uc.a.run.app"),
+		ContactsURL:      getenv("CONTACTS_URL", "https://contacts-service-5gcrg4oiza-uc.a.run.app"),
+		OpportunitiesURL: getenv("OPPORTUNITIES_URL", "https://opportunities-service-5gcrg4oiza-uc.a.run.app"),
+		ActivitiesURL:    getenv("ACTIVITIES_URL", "https://activities-service-5gcrg4oiza-uc.a.run.app"),
+		AutomationURL:    getenv("AUTOMATION_URL", "https://automation-service-5gcrg4oiza-uc.a.run.app"),
+		IntegrationsURL:  getenv("INTEGRATIONS_URL", "https://integrations-service-5gcrg4oiza-uc.a.run.app"),
+		ReportingURL:     getenv("REPORTING_URL", "https://reporting-service-5gcrg4oiza-uc.a.run.app"),
+		SearchURL:        getenv("SEARCH_URL", "https://search-service-5gcrg4oiza-uc.a.run.app"),
 		EventsURL:        getenv("EVENTS_URL", "https://observaboard-rodmen07.fly.dev"),
 	}
 }
