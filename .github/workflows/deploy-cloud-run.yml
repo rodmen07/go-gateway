@@ -93,7 +93,9 @@ jobs:
           # Build env var string from resolved upstream URLs (skip empty values)
           ENV_VARS="PORT=8091"
           append_if_set() {
-            [ -n "$2" ] && ENV_VARS="${ENV_VARS},$1=$2"
+            if [ -n "$2" ]; then
+              ENV_VARS="${ENV_VARS},$1=$2"
+            fi
           }
           append_if_set TASKS_URL        "$TASKS_URL"
           append_if_set ACCOUNTS_URL     "$ACCOUNTS_URL"
