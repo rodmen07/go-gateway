@@ -117,7 +117,6 @@ jobs:
             --image "$IMAGE" \
             --region "${{ env.GCP_REGION }}" \
             --platform managed \
-            --allow-unauthenticated \
             --port 8080 \
             --memory 256Mi \
             --cpu 1 \
@@ -126,6 +125,14 @@ jobs:
             --service-account "${{ secrets.GCP_SERVICE_ACCOUNT }}" \
             ${ENV_VARS:+--set-env-vars "${ENV_VARS}"} \
             --quiet
+
+      - name: Allow unauthenticated access
+        if: steps.config.outputs.enabled == 'true'
+        run: |
+          gcloud run services add-iam-policy-binding "${{ env.SERVICE_NAME }}" \
+            --region "${{ env.GCP_REGION }}" \
+            --member="allUsers" \
+            --role="roles/run.invoker"
 
       - name: Health check
         if: steps.config.outputs.enabled == 'true'
