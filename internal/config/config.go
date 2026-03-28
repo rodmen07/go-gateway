@@ -38,7 +38,7 @@ func Load() Config {
 	}
 
 	return Config{
-		Port:         getenv("PORT", "8091"),
+		Port:         getenv("PORT", "8080"),
 		RateLimitRPS: rps,
 
 		TasksURL:         getenv("TASKS_URL", "https://backend-service-rodmen07-v2.fly.dev"),

@@ -91,10 +91,15 @@ jobs:
         if: steps.config.outputs.enabled == 'true'
         run: |
           # Build env var string from resolved upstream URLs (skip empty values)
-          ENV_VARS="PORT=8091"
+          # Note: PORT is reserved by Cloud Run and injected automatically (value: 8080)
+          ENV_VARS=""
           append_if_set() {
             if [ -n "$2" ]; then
-              ENV_VARS="${ENV_VARS},$1=$2"
+              if [ -z "$ENV_VARS" ]; then
+                ENV_VARS="$1=$2"
+              else
+                ENV_VARS="${ENV_VARS},$1=$2"
+              fi
             fi
           }
           append_if_set TASKS_URL        "$TASKS_URL"
@@ -113,13 +118,13 @@ jobs:
             --region "${{ env.GCP_REGION }}" \
             --platform managed \
             --allow-unauthenticated \
-            --port 8091 \
+            --port 8080 \
             --memory 256Mi \
             --cpu 1 \
             --min-instances 0 \
             --max-instances 3 \
             --service-account "${{ secrets.GCP_SERVICE_ACCOUNT }}" \
-            --set-env-vars "${ENV_VARS}" \
+            ${ENV_VARS:+--set-env-vars "${ENV_VARS}"} \
             --quiet
 
       - name: Health check
