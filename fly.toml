@@ -24,3 +24,6 @@ primary_region = "iad"
 
 [env]
   PORT = "8091"
+  AUTH_URL = "https://auth-service-rodmen07-v2.fly.dev"
+  PROJECTS_URL = "https://projects-service-rodmen07.fly.dev"
+  ALLOWED_ORIGINS = "https://rodmen07.github.io"
