@@ -20,6 +20,8 @@ func main() {
 	cfg := config.Load()
 
 	routes := []route{
+		{"/api/auth", cfg.AuthURL},
+		{"/api/v1/projects", cfg.ProjectsURL},
 		{"/api/tasks", cfg.TasksURL},
 		{"/api/accounts", cfg.AccountsURL},
 		{"/api/contacts", cfg.ContactsURL},
@@ -33,6 +35,7 @@ func main() {
 	}
 
 	rateLimiter := middleware.RateLimiter(cfg.RateLimitRPS)
+	cors := middleware.CORS()
 
 	mux := http.NewServeMux()
 
@@ -42,7 +45,7 @@ func main() {
 	// Proxy routes — each wrapped with the full middleware chain
 	for _, r := range routes {
 		p := proxy.New(r.upstream, r.prefix)
-		handler := middleware.Chain(p, middleware.Logger, middleware.RequestID, rateLimiter)
+		handler := middleware.Chain(p, cors, middleware.Logger, middleware.RequestID, rateLimiter)
 		mux.Handle(r.prefix+"/", handler)
 		// Also match the prefix exactly (no trailing slash)
 		mux.Handle(r.prefix, handler)

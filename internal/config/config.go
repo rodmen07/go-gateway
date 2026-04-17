@@ -11,16 +11,18 @@ type Config struct {
 	RateLimitRPS float64
 
 	// Upstream service URLs
-	TasksURL        string
-	AccountsURL     string
-	ContactsURL     string
+	AuthURL          string
+	ProjectsURL      string
+	TasksURL         string
+	AccountsURL      string
+	ContactsURL      string
 	OpportunitiesURL string
-	ActivitiesURL   string
-	AutomationURL   string
-	IntegrationsURL string
-	ReportingURL    string
-	SearchURL       string
-	EventsURL       string
+	ActivitiesURL    string
+	AutomationURL    string
+	IntegrationsURL  string
+	ReportingURL     string
+	SearchURL        string
+	EventsURL        string
 }
 
 func getenv(key, fallback string) string {
@@ -41,6 +43,8 @@ func Load() Config {
 		Port:         getenv("PORT", "8080"),
 		RateLimitRPS: rps,
 
+		AuthURL:          getenv("AUTH_URL", "http://127.0.0.1:8082"),
+		ProjectsURL:      getenv("PROJECTS_URL", "http://127.0.0.1:8083"),
 		TasksURL:         getenv("TASKS_URL", "https://backend-service-rodmen07-v2.fly.dev"),
 		AccountsURL:      getenv("ACCOUNTS_URL", "https://accounts-service-5gcrg4oiza-uc.a.run.app"),
 		ContactsURL:      getenv("CONTACTS_URL", "https://contacts-service-5gcrg4oiza-uc.a.run.app"),
