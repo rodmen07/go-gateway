@@ -54,6 +54,6 @@ func Load() Config {
 		IntegrationsURL:  getenv("INTEGRATIONS_URL", "https://integrations-service-5gcrg4oiza-uc.a.run.app"),
 		ReportingURL:     getenv("REPORTING_URL", "https://reporting-service-5gcrg4oiza-uc.a.run.app"),
 		SearchURL:        getenv("SEARCH_URL", "https://search-service-5gcrg4oiza-uc.a.run.app"),
-		EventsURL:        getenv("EVENTS_URL", "https://observaboard-rodmen07.fly.dev"),
+		EventsURL:        getenv("EVENTS_URL", "https://observaboard-5gcrg4oiza-uc.a.run.app"),
 	}
 }
