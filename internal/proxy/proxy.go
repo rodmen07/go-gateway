@@ -42,6 +42,12 @@ func New(upstream, prefixToStrip string, obs *observer.Observer) http.Handler {
 				req.Header.Set("X-Forwarded-For", clientIP)
 			}
 			req.Header.Set("X-Forwarded-Host", req.Host)
+
+			// Ensure W3C traceparent is propagated for distributed tracing.
+			// Set by the traceparent middleware; must survive to downstream services.
+			if tp := req.Header.Get("traceparent"); tp != "" {
+				req.Header.Set("traceparent", tp)
+			}
 		},
 
 		ModifyResponse: func(resp *http.Response) error {

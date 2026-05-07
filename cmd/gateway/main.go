@@ -53,7 +53,7 @@ func main() {
 			routeObs = obs
 		}
 		p := proxy.New(r.upstream, r.prefix, routeObs)
-		handler := middleware.Chain(p, cors, middleware.Logger, middleware.RequestID, rateLimiter)
+		handler := middleware.Chain(p, cors, middleware.Logger, middleware.Traceparent, middleware.RequestID, rateLimiter)
 		mux.Handle(r.prefix+"/", handler)
 		// Also match the prefix exactly (no trailing slash)
 		mux.Handle(r.prefix, handler)
