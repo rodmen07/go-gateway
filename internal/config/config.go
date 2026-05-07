@@ -23,6 +23,10 @@ type Config struct {
 	ReportingURL     string
 	SearchURL        string
 	EventsURL        string
+
+	// Observaboard mutation observer
+	ObservaboardURL    string
+	ObservaboardAPIKey string
 }
 
 func getenv(key, fallback string) string {
@@ -55,5 +59,8 @@ func Load() Config {
 		ReportingURL:     getenv("REPORTING_URL", "https://reporting-service-5gcrg4oiza-uc.a.run.app"),
 		SearchURL:        getenv("SEARCH_URL", "https://search-service-5gcrg4oiza-uc.a.run.app"),
 		EventsURL:        getenv("EVENTS_URL", "https://observaboard-5gcrg4oiza-uc.a.run.app"),
+
+		ObservaboardURL:    getenv("OBSERVABOARD_URL", "https://observaboard-5gcrg4oiza-uc.a.run.app"),
+		ObservaboardAPIKey: getenv("OBSERVABOARD_API_KEY", ""),
 	}
 }
