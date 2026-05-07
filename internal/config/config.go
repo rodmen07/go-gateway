@@ -45,7 +45,7 @@ func Load() Config {
 
 		AuthURL:          getenv("AUTH_URL", "http://127.0.0.1:8082"),
 		ProjectsURL:      getenv("PROJECTS_URL", "http://127.0.0.1:8083"),
-		TasksURL:         getenv("TASKS_URL", "https://backend-service-rodmen07-v2.fly.dev"),
+		TasksURL:         getenv("TASKS_URL", "https://backend-service-5gcrg4oiza-uc.a.run.app"),
 		AccountsURL:      getenv("ACCOUNTS_URL", "https://accounts-service-5gcrg4oiza-uc.a.run.app"),
 		ContactsURL:      getenv("CONTACTS_URL", "https://contacts-service-5gcrg4oiza-uc.a.run.app"),
 		OpportunitiesURL: getenv("OPPORTUNITIES_URL", "https://opportunities-service-5gcrg4oiza-uc.a.run.app"),
