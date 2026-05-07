@@ -17,7 +17,8 @@ import (
 // trigger a fire-and-forget ingest event to observaboard.
 //
 // Example: upstream="https://accounts-service.fly.dev", prefixToStrip="/api/accounts"
-//   /api/accounts/api/v1/accounts → https://accounts-service.fly.dev/api/v1/accounts
+//
+//	/api/accounts/api/v1/accounts → https://accounts-service.fly.dev/api/v1/accounts
 func New(upstream, prefixToStrip string, obs *observer.Observer) http.Handler {
 	target, err := url.Parse(upstream)
 	if err != nil {
