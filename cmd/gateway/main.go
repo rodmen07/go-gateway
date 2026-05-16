@@ -21,7 +21,7 @@ type route struct {
 func main() {
 	cfg := config.Load()
 
-	obs := observer.New(cfg.ObservaboardURL, cfg.ObservaboardAPIKey)
+	obs := observer.New(cfg.ObservaboardURL, cfg.ObservaboardAPIKey, cfg.PubSubProject, cfg.PubSubTopic)
 
 	routes := []route{
 		{"/api/auth", cfg.AuthURL, false},
@@ -42,14 +42,14 @@ func main() {
 		// Auth routes: tightest limit to slow credential-stuffing attempts.
 		"/api/auth": cfg.AuthRateLimitRPS,
 		// CRM write-capable routes: moderate limit.
-		"/api/accounts":     cfg.WriteRateLimitRPS,
-		"/api/contacts":     cfg.WriteRateLimitRPS,
+		"/api/accounts":      cfg.WriteRateLimitRPS,
+		"/api/contacts":      cfg.WriteRateLimitRPS,
 		"/api/opportunities": cfg.WriteRateLimitRPS,
-		"/api/activities":   cfg.WriteRateLimitRPS,
-		"/api/automation":   cfg.WriteRateLimitRPS,
-		"/api/integrations": cfg.WriteRateLimitRPS,
-		"/api/tasks":        cfg.WriteRateLimitRPS,
-		"/api/v1/projects":  cfg.WriteRateLimitRPS,
+		"/api/activities":    cfg.WriteRateLimitRPS,
+		"/api/automation":    cfg.WriteRateLimitRPS,
+		"/api/integrations":  cfg.WriteRateLimitRPS,
+		"/api/tasks":         cfg.WriteRateLimitRPS,
+		"/api/v1/projects":   cfg.WriteRateLimitRPS,
 		// Read-heavy routes: most generous limit.
 		"/api/reporting": cfg.ReadRateLimitRPS,
 		"/api/search":    cfg.ReadRateLimitRPS,

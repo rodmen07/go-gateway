@@ -33,6 +33,12 @@ type Config struct {
 	// Observaboard mutation observer
 	ObservaboardURL    string
 	ObservaboardAPIKey string
+
+	// Pub/Sub async ingest path (v1.11.3).
+	// When both are set, the observer publishes CRM mutation events to the
+	// Pub/Sub topic instead of POSTing directly to observaboard.
+	PubSubProject string
+	PubSubTopic   string
 }
 
 func getenv(key, fallback string) string {
@@ -75,5 +81,8 @@ func Load() Config {
 
 		ObservaboardURL:    getenv("OBSERVABOARD_URL", "https://observaboard-5gcrg4oiza-uc.a.run.app"),
 		ObservaboardAPIKey: getenv("OBSERVABOARD_API_KEY", ""),
+
+		PubSubProject: getenv("PUBSUB_PROJECT", ""),
+		PubSubTopic:   getenv("PUBSUB_TOPIC", ""),
 	}
 }
