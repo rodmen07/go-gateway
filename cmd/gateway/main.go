@@ -38,7 +38,23 @@ func main() {
 		{"/api/events", cfg.EventsURL, false},
 	}
 
-	rateLimiter := middleware.RateLimiter(cfg.RateLimitRPS)
+	rateLimiter := middleware.RateLimiter(cfg.RateLimitRPS, map[string]float64{
+		// Auth routes: tightest limit to slow credential-stuffing attempts.
+		"/api/auth": cfg.AuthRateLimitRPS,
+		// CRM write-capable routes: moderate limit.
+		"/api/accounts":     cfg.WriteRateLimitRPS,
+		"/api/contacts":     cfg.WriteRateLimitRPS,
+		"/api/opportunities": cfg.WriteRateLimitRPS,
+		"/api/activities":   cfg.WriteRateLimitRPS,
+		"/api/automation":   cfg.WriteRateLimitRPS,
+		"/api/integrations": cfg.WriteRateLimitRPS,
+		"/api/tasks":        cfg.WriteRateLimitRPS,
+		"/api/v1/projects":  cfg.WriteRateLimitRPS,
+		// Read-heavy routes: most generous limit.
+		"/api/reporting": cfg.ReadRateLimitRPS,
+		"/api/search":    cfg.ReadRateLimitRPS,
+		"/api/events":    cfg.ReadRateLimitRPS,
+	})
 	cors := middleware.CORS()
 
 	mux := http.NewServeMux()
@@ -61,7 +77,8 @@ func main() {
 	}
 
 	addr := ":" + cfg.Port
-	log.Printf("go-gateway listening on %s (rate limit: %.0f rps per route)\n", addr, cfg.RateLimitRPS)
+	log.Printf("go-gateway listening on %s (auth: %.0f rps | write: %.0f rps | read: %.0f rps | default: %.0f rps)\n",
+		addr, cfg.AuthRateLimitRPS, cfg.WriteRateLimitRPS, cfg.ReadRateLimitRPS, cfg.RateLimitRPS)
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatalf("server error: %v", err)
 	}

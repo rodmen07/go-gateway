@@ -7,8 +7,14 @@ import (
 
 // Config holds all runtime configuration for the gateway.
 type Config struct {
-	Port         string
-	RateLimitRPS float64
+	Port string
+
+	// Rate limiting — defaults applied when env vars are absent.
+	// RateLimitRPS is the fallback for any route not matched by a tier.
+	RateLimitRPS      float64 // default 15  (unclassified routes)
+	AuthRateLimitRPS  float64 // default 5   (/api/auth/*)
+	WriteRateLimitRPS float64 // default 30  (CRM mutation routes)
+	ReadRateLimitRPS  float64 // default 60  (reporting, search, events)
 
 	// Upstream service URLs
 	AuthURL          string
@@ -36,16 +42,23 @@ func getenv(key, fallback string) string {
 	return fallback
 }
 
+func parseRPS(key string, fallback float64) float64 {
+	v, err := strconv.ParseFloat(getenv(key, ""), 64)
+	if err != nil || v <= 0 {
+		return fallback
+	}
+	return v
+}
+
 // Load reads configuration from environment variables with production defaults.
 func Load() Config {
-	rps, err := strconv.ParseFloat(getenv("RATE_LIMIT_RPS", "10"), 64)
-	if err != nil || rps <= 0 {
-		rps = 10
-	}
-
 	return Config{
-		Port:         getenv("PORT", "8080"),
-		RateLimitRPS: rps,
+		Port: getenv("PORT", "8080"),
+
+		RateLimitRPS:      parseRPS("RATE_LIMIT_RPS", 15),
+		AuthRateLimitRPS:  parseRPS("RATE_LIMIT_AUTH_RPS", 5),
+		WriteRateLimitRPS: parseRPS("RATE_LIMIT_WRITE_RPS", 30),
+		ReadRateLimitRPS:  parseRPS("RATE_LIMIT_READ_RPS", 60),
 
 		AuthURL:          getenv("AUTH_URL", "http://127.0.0.1:8082"),
 		ProjectsURL:      getenv("PROJECTS_URL", "http://127.0.0.1:8083"),
