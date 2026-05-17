@@ -10,6 +10,8 @@ on:
       - "go.sum"
       - "Dockerfile"
       - ".github/workflows/deploy-cloud-run.yml"
+      - ".github/actions/cloud-run-rollback/action.yml"
+      - "scripts/smoke-test.sh"
   workflow_dispatch:
 
 env:
@@ -17,6 +19,8 @@ env:
   GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
   SERVICE_NAME: go-gateway
   IMAGE_NAME: go-gateway
+  CACHE_TTL_SECONDS: ${{ vars.GATEWAY_CACHE_TTL_SECONDS }}
+  CACHE_MAX_ENTRIES: ${{ vars.GATEWAY_CACHE_MAX_ENTRIES }}
 
 jobs:
   deploy:
@@ -88,7 +92,18 @@ jobs:
           echo "EVENTS_URL=$(get_url observaboard)" >> "$GITHUB_ENV"
           echo "OBSERVABOARD_URL=$(get_url observaboard)" >> "$GITHUB_ENV"
 
-      - name: Deploy to Cloud Run
+      - name: Record current stable revision
+        id: stable
+        if: steps.config.outputs.enabled == 'true'
+        run: |
+          STABLE=$(gcloud run services describe "${{ env.SERVICE_NAME }}" \
+            --region="${{ env.GCP_REGION }}" \
+            --format='value(status.traffic[0].revisionName)' 2>/dev/null || echo "")
+          echo "revision=${STABLE}" >> "$GITHUB_OUTPUT"
+          echo "Stable revision: ${STABLE}"
+
+      - name: Deploy to Cloud Run (no-traffic canary)
+        id: deploy
         if: steps.config.outputs.enabled == 'true'
         run: |
           # Build env var string from resolved upstream URLs (skip empty values)
@@ -103,18 +118,23 @@ jobs:
               fi
             fi
           }
-          append_if_set TASKS_URL        "$TASKS_URL"
-          append_if_set ACCOUNTS_URL     "$ACCOUNTS_URL"
-          append_if_set CONTACTS_URL     "$CONTACTS_URL"
+          append_if_set TASKS_URL         "$TASKS_URL"
+          append_if_set ACCOUNTS_URL      "$ACCOUNTS_URL"
+          append_if_set CONTACTS_URL      "$CONTACTS_URL"
           append_if_set OPPORTUNITIES_URL "$OPPORTUNITIES_URL"
-          append_if_set ACTIVITIES_URL   "$ACTIVITIES_URL"
-          append_if_set AUTOMATION_URL   "$AUTOMATION_URL"
-          append_if_set INTEGRATIONS_URL "$INTEGRATIONS_URL"
-          append_if_set REPORTING_URL    "$REPORTING_URL"
-          append_if_set SEARCH_URL       "$SEARCH_URL"
-          append_if_set EVENTS_URL          "$EVENTS_URL"
-          append_if_set OBSERVABOARD_URL     "$OBSERVABOARD_URL"
+          append_if_set ACTIVITIES_URL    "$ACTIVITIES_URL"
+          append_if_set AUTOMATION_URL    "$AUTOMATION_URL"
+          append_if_set INTEGRATIONS_URL  "$INTEGRATIONS_URL"
+          append_if_set REPORTING_URL     "$REPORTING_URL"
+          append_if_set SEARCH_URL        "$SEARCH_URL"
+          append_if_set EVENTS_URL        "$EVENTS_URL"
+          append_if_set OBSERVABOARD_URL  "$OBSERVABOARD_URL"
+          append_if_set REDIS_URL         "${{ secrets.GO_GATEWAY_REDIS_URL }}"
+          append_if_set CACHE_TTL_SECONDS "${{ env.CACHE_TTL_SECONDS }}"
+          append_if_set CACHE_MAX_ENTRIES "${{ env.CACHE_MAX_ENTRIES }}"
 
+          # Deploy with --no-traffic so the new revision is reachable via its
+          # direct URL for smoke testing but serves 0% of production traffic.
           gcloud run deploy "${{ env.SERVICE_NAME }}" \
             --image "$IMAGE" \
             --region "${{ env.GCP_REGION }}" \
@@ -129,7 +149,15 @@ jobs:
             --service-account "${{ secrets.GCP_SERVICE_ACCOUNT }}" \
             ${ENV_VARS:+--set-env-vars "${ENV_VARS}"} \
             --set-secrets OBSERVABOARD_API_KEY=OBSERVABOARD_API_KEY:latest,AUTH_JWT_SECRET=AUTH_JWT_SECRET:latest \
+            --no-traffic \
             --quiet
+
+          # Capture the name of the revision that was just created.
+          NEW_REV=$(gcloud run services describe "${{ env.SERVICE_NAME }}" \
+            --region="${{ env.GCP_REGION }}" \
+            --format='value(status.latestCreatedRevisionName)')
+          echo "new_revision=${NEW_REV}" >> "$GITHUB_OUTPUT"
+          echo "New revision: ${NEW_REV}"
 
       - name: Allow unauthenticated access
         if: steps.config.outputs.enabled == 'true'
@@ -148,7 +176,52 @@ jobs:
             sleep $((2 ** attempt))
           done
 
-      - name: Health check
+      - name: Smoke test new revision (0% traffic)
+        id: smoke_zero
+        if: steps.config.outputs.enabled == 'true'
+        run: |
+          # The new revision exposes a direct URL of the form:
+          #   https://<revision>---<hash>-<region>.a.run.app
+          # Use the service URL for health (revision URL requires auth); we probe
+          # the stable URL to confirm the running service is still healthy while
+          # the new revision is warming up.
+          SERVICE_URL=$(gcloud run services describe "${{ env.SERVICE_NAME }}" \
+            --region="${{ env.GCP_REGION }}" \
+            --format='value(status.url)')
+          bash scripts/smoke-test.sh "$SERVICE_URL"
+
+      - name: Shift 10% traffic to canary
+        if: steps.config.outputs.enabled == 'true' && steps.stable.outputs.revision != ''
+        run: |
+          gcloud run services update-traffic "${{ env.SERVICE_NAME }}" \
+            --region="${{ env.GCP_REGION }}" \
+            --to-revisions="${{ steps.deploy.outputs.new_revision }}=10,${{ steps.stable.outputs.revision }}=90" \
+            --quiet
+          echo "Traffic: 10% -> ${{ steps.deploy.outputs.new_revision }}, 90% -> ${{ steps.stable.outputs.revision }}"
+
+      - name: Canary soak (30 s)
+        if: steps.config.outputs.enabled == 'true' && steps.stable.outputs.revision != ''
+        run: sleep 30
+
+      - name: Smoke test at 10% canary
+        id: smoke_canary
+        if: steps.config.outputs.enabled == 'true' && steps.stable.outputs.revision != ''
+        run: |
+          SERVICE_URL=$(gcloud run services describe "${{ env.SERVICE_NAME }}" \
+            --region="${{ env.GCP_REGION }}" \
+            --format='value(status.url)')
+          bash scripts/smoke-test.sh "$SERVICE_URL"
+
+      - name: Shift 100% traffic to new revision
+        if: steps.config.outputs.enabled == 'true'
+        run: |
+          gcloud run services update-traffic "${{ env.SERVICE_NAME }}" \
+            --region="${{ env.GCP_REGION }}" \
+            --to-latest \
+            --quiet
+          echo "Traffic: 100% -> ${{ steps.deploy.outputs.new_revision }}"
+
+      - name: Final health check
         if: steps.config.outputs.enabled == 'true'
         run: |
           URL=$(gcloud run services describe "${{ env.SERVICE_NAME }}" \
@@ -166,3 +239,15 @@ jobs:
           done
           echo "::error::Health check failed after 2 minutes."
           exit 1
+
+      - name: Rollback on smoke failure
+        if: >
+          steps.config.outputs.enabled == 'true' &&
+          steps.stable.outputs.revision != '' &&
+          (failure() && (steps.smoke_zero.outcome == 'failure' || steps.smoke_canary.outcome == 'failure'))
+        uses: ./.github/actions/cloud-run-rollback
+        with:
+          service_name: ${{ env.SERVICE_NAME }}
+          region: ${{ env.GCP_REGION }}
+          stable_revision: ${{ steps.stable.outputs.revision }}
+          new_revision: ${{ steps.deploy.outputs.new_revision }}

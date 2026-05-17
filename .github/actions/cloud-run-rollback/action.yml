@@ -1,0 +1,66 @@
+name: Cloud Run Rollback
+description: >
+  Rolls back a Cloud Run service to a specified stable revision and posts
+  a rollback notice as a GitHub Actions job summary. Designed to be called
+  in an `if: failure()` step after a failed canary smoke test.
+
+inputs:
+  service_name:
+    description: Cloud Run service name (e.g. go-gateway)
+    required: true
+  region:
+    description: GCP region (e.g. us-central1)
+    required: true
+  stable_revision:
+    description: Name of the stable revision to restore 100% traffic to
+    required: true
+  new_revision:
+    description: Name of the failed canary revision (informational)
+    required: false
+    default: ''
+
+outputs:
+  rolled_back:
+    description: '"true" if rollback was executed, "false" if skipped (no stable revision)'
+    value: ${{ steps.rollback.outputs.rolled_back }}
+
+runs:
+  using: composite
+  steps:
+    - name: Rollback traffic
+      id: rollback
+      shell: bash
+      run: |
+        if [ -z "${{ inputs.stable_revision }}" ]; then
+          echo "::warning::No stable revision provided — skipping rollback (first deploy?)"
+          echo "rolled_back=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        echo "::warning::Rolling back ${{ inputs.service_name }} to ${{ inputs.stable_revision }}"
+        gcloud run services update-traffic "${{ inputs.service_name }}" \
+          --region="${{ inputs.region }}" \
+          --to-revisions="${{ inputs.stable_revision }}=100" \
+          --quiet
+
+        echo "rolled_back=true" >> "$GITHUB_OUTPUT"
+
+    - name: Post rollback summary
+      if: steps.rollback.outputs.rolled_back == 'true'
+      shell: bash
+      run: |
+        cat >> "$GITHUB_STEP_SUMMARY" << 'EOF'
+        ## Canary Rollback Triggered
+
+        | Field | Value |
+        |-------|-------|
+        | Service | `${{ inputs.service_name }}` |
+        | Region | `${{ inputs.region }}` |
+        | Failed revision | `${{ inputs.new_revision }}` |
+        | Restored revision | `${{ inputs.stable_revision }}` |
+        | Traffic | 100% restored to stable |
+
+        The canary smoke test failed. All traffic has been redirected back to
+        the stable revision. Check the smoke-test step logs for the failure reason.
+        EOF
+        echo "::error::Canary deploy failed — ${{ inputs.service_name }} rolled back to ${{ inputs.stable_revision }}"

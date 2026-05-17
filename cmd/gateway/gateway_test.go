@@ -16,6 +16,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -77,6 +78,45 @@ func makeGateway(
 
 	// Proxy routes
 	cors := middleware.CORS()
+	defaultRPS := cfg.RateLimitRPS
+	if defaultRPS <= 0 {
+		defaultRPS = 100
+	}
+	authRPS := cfg.AuthRateLimitRPS
+	if authRPS <= 0 {
+		authRPS = 50
+	}
+	writeRPS := cfg.WriteRateLimitRPS
+	if writeRPS <= 0 {
+		writeRPS = 100
+	}
+	readRPS := cfg.ReadRateLimitRPS
+	if readRPS <= 0 {
+		readRPS = 200
+	}
+	rateLimiter := middleware.RateLimiter(defaultRPS, map[string]float64{
+		"/api/auth":         authRPS,
+		"/api/accounts":     writeRPS,
+		"/api/contacts":     writeRPS,
+		"/api/opportunities": writeRPS,
+		"/api/activities":   writeRPS,
+		"/api/automation":   writeRPS,
+		"/api/integrations": writeRPS,
+		"/api/tasks":        writeRPS,
+		"/api/v1/projects":  writeRPS,
+		"/api/reporting":    readRPS,
+		"/api/search":       readRPS,
+		"/api/events":       readRPS,
+	})
+	cacheTTL := time.Duration(cfg.CacheTTLSeconds) * time.Second
+	if cacheTTL <= 0 {
+		cacheTTL = 5 * time.Second
+	}
+	cacheMaxEntries := cfg.CacheMaxEntries
+	if cacheMaxEntries <= 0 {
+		cacheMaxEntries = 100
+	}
+	responseCache := middleware.ResponseCache(cacheTTL, cacheMaxEntries)
 	for _, r := range routes {
 		p := proxy.New(r.upstream, r.prefix, nil)
 		cb := proxy.NewCircuitBreaker(3, 5*time.Second)
@@ -86,6 +126,8 @@ func makeGateway(
 			middleware.Logger,
 			middleware.Traceparent,
 			middleware.RequestID,
+			responseCache,
+			rateLimiter,
 		)
 		mux.Handle(r.prefix+"/", handler)
 		mux.Handle(r.prefix, handler)
@@ -253,5 +295,51 @@ func TestGateway_RSAPublicKeyAuth(t *testing.T) {
 	h.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Errorf("expected 200 on /health, got %d", rr.Code)
+	}
+}
+
+func TestGateway_ResponseCacheHitOnReadEndpoint(t *testing.T) {
+	var calls atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	t.Cleanup(upstream.Close)
+
+	cfg := config.Config{CacheTTLSeconds: 5, CacheMaxEntries: 100}
+	routes := []struct {
+		prefix   string
+		upstream string
+	}{
+		{"/api/reporting", upstream.URL},
+	}
+	h := makeGateway(t, cfg, routes, []string{"/health", "/api/auth", "/api/reporting"})
+
+	req1 := httptest.NewRequest(http.MethodGet, "/api/reporting/summary?range=7d", nil)
+	rr1 := httptest.NewRecorder()
+	h.ServeHTTP(rr1, req1)
+	if rr1.Code != http.StatusOK {
+		t.Fatalf("first request expected 200, got %d", rr1.Code)
+	}
+	if rr1.Header().Get("X-Cache") != "MISS" {
+		t.Fatalf("first request expected X-Cache=MISS, got %q", rr1.Header().Get("X-Cache"))
+	}
+
+	req2 := httptest.NewRequest(http.MethodGet, "/api/reporting/summary?range=7d", nil)
+	rr2 := httptest.NewRecorder()
+	h.ServeHTTP(rr2, req2)
+	if rr2.Code != http.StatusOK {
+		t.Fatalf("second request expected 200, got %d", rr2.Code)
+	}
+	if rr2.Header().Get("X-Cache") != "HIT" {
+		t.Fatalf("second request expected X-Cache=HIT, got %q", rr2.Header().Get("X-Cache"))
+	}
+
+	if calls.Load() < 1 {
+		t.Fatal("expected upstream to be called at least once")
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("expected cache to prevent repeated upstream calls, got %d calls", calls.Load())
 	}
 }

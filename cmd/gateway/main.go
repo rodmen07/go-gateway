@@ -9,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"github.com/rodmen07/go-gateway/internal/config"
 	"github.com/rodmen07/go-gateway/internal/health"
 	"github.com/rodmen07/go-gateway/internal/middleware"
@@ -66,7 +67,7 @@ func main() {
 		{"/api/events", cfg.EventsURL, false},
 	}
 
-	rateLimiter := middleware.RateLimiter(cfg.RateLimitRPS, map[string]float64{
+	routeLimits := map[string]float64{
 		// Auth routes: tightest limit to slow credential-stuffing attempts.
 		"/api/auth": cfg.AuthRateLimitRPS,
 		// CRM write-capable routes: moderate limit.
@@ -82,7 +83,21 @@ func main() {
 		"/api/reporting": cfg.ReadRateLimitRPS,
 		"/api/search":    cfg.ReadRateLimitRPS,
 		"/api/events":    cfg.ReadRateLimitRPS,
-	})
+	}
+
+	rateLimiter := middleware.RateLimiter(cfg.RateLimitRPS, routeLimits)
+	if cfg.RedisURL != "" {
+		redisOpts, err := redis.ParseURL(cfg.RedisURL)
+		if err != nil {
+			// Backward-compatible fallback for plain host:port values.
+			redisOpts = &redis.Options{Addr: cfg.RedisURL}
+		}
+		redisClient := redis.NewClient(redisOpts)
+		rateLimiter = middleware.RedisRateLimiter(redisClient, cfg.RateLimitRPS, routeLimits)
+		slog.Info("redis rate limiter enabled", "redis_addr", cfg.RedisURL)
+	}
+
+	responseCache := middleware.ResponseCache(time.Duration(cfg.CacheTTLSeconds)*time.Second, cfg.CacheMaxEntries)
 	cors := middleware.CORS()
 
 	mux := http.NewServeMux()
@@ -118,7 +133,7 @@ func main() {
 		// Each route gets its own circuit breaker: opens after 5 consecutive 5xx
 		// responses and allows a probe after 30 s.
 		cb := proxy.NewCircuitBreaker(5, 30*time.Second)
-		handler := middleware.Chain(proxy.WithCircuitBreaker(cb)(p), cors, middleware.Logger, middleware.Traceparent, middleware.RequestID, rateLimiter)
+		handler := middleware.Chain(proxy.WithCircuitBreaker(cb)(p), cors, middleware.Logger, middleware.Traceparent, middleware.RequestID, responseCache, rateLimiter)
 		mux.Handle(r.prefix+"/", handler)
 		// Also match the prefix exactly (no trailing slash)
 		mux.Handle(r.prefix, handler)
@@ -132,6 +147,8 @@ func main() {
 		"write_rps", cfg.WriteRateLimitRPS,
 		"read_rps", cfg.ReadRateLimitRPS,
 		"default_rps", cfg.RateLimitRPS,
+		"cache_ttl_seconds", cfg.CacheTTLSeconds,
+		"cache_max_entries", cfg.CacheMaxEntries,
 	)
 
 	// JWTAuth wraps the entire mux. /health and /api/auth are exempted so

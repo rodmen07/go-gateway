@@ -15,6 +15,9 @@ type Config struct {
 	AuthRateLimitRPS  float64 // default 5   (/api/auth/*)
 	WriteRateLimitRPS float64 // default 30  (CRM mutation routes)
 	ReadRateLimitRPS  float64 // default 60  (reporting, search, events)
+	RedisURL          string  // optional redis:// URL for distributed limiter
+	CacheTTLSeconds   int     // response cache TTL for read endpoints
+	CacheMaxEntries   int     // max in-memory response cache entries
 
 	// Upstream service URLs
 	AuthURL          string
@@ -64,6 +67,14 @@ func parseRPS(key string, fallback float64) float64 {
 	return v
 }
 
+func parseInt(key string, fallback int) int {
+	v, err := strconv.Atoi(getenv(key, ""))
+	if err != nil || v <= 0 {
+		return fallback
+	}
+	return v
+}
+
 // Load reads configuration from environment variables with production defaults.
 func Load() Config {
 	return Config{
@@ -73,6 +84,9 @@ func Load() Config {
 		AuthRateLimitRPS:  parseRPS("RATE_LIMIT_AUTH_RPS", 5),
 		WriteRateLimitRPS: parseRPS("RATE_LIMIT_WRITE_RPS", 30),
 		ReadRateLimitRPS:  parseRPS("RATE_LIMIT_READ_RPS", 60),
+		RedisURL:          getenv("REDIS_URL", ""),
+		CacheTTLSeconds:   parseInt("CACHE_TTL_SECONDS", 5),
+		CacheMaxEntries:   parseInt("CACHE_MAX_ENTRIES", 500),
 
 		AuthURL:          getenv("AUTH_URL", "http://127.0.0.1:8082"),
 		ProjectsURL:      getenv("PROJECTS_URL", "http://127.0.0.1:8083"),
