@@ -79,7 +79,11 @@ func main() {
 	addr := ":" + cfg.Port
 	log.Printf("go-gateway listening on %s (auth: %.0f rps | write: %.0f rps | read: %.0f rps | default: %.0f rps)\n",
 		addr, cfg.AuthRateLimitRPS, cfg.WriteRateLimitRPS, cfg.ReadRateLimitRPS, cfg.RateLimitRPS)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+
+	// JWTAuth wraps the entire mux. /health and /api/auth are exempted so
+	// unauthenticated login and health-check requests still reach their handlers.
+	jwtAuth := middleware.JWTAuth(cfg.JWTSecret, cfg.JWTIssuer, []string{"/health", "/api/auth"})
+	if err := http.ListenAndServe(addr, jwtAuth(mux)); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
 }

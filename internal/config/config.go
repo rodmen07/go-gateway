@@ -39,6 +39,12 @@ type Config struct {
 	// Pub/Sub topic instead of POSTing directly to observaboard.
 	PubSubProject string
 	PubSubTopic   string
+
+	// JWT validation (v1.12.2).
+	// Set AUTH_JWT_SECRET to the same value as auth-service AUTH_JWT_SECRET.
+	// When empty, token validation is skipped (local dev / no-auth deployments).
+	JWTSecret string
+	JWTIssuer string
 }
 
 func getenv(key, fallback string) string {
@@ -84,5 +90,8 @@ func Load() Config {
 
 		PubSubProject: getenv("PUBSUB_PROJECT", ""),
 		PubSubTopic:   getenv("PUBSUB_TOPIC", ""),
+
+		JWTSecret: getenv("AUTH_JWT_SECRET", ""),
+		JWTIssuer: getenv("AUTH_ISSUER", "auth-service"),
 	}
 }
