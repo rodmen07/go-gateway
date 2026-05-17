@@ -40,11 +40,13 @@ type Config struct {
 	PubSubProject string
 	PubSubTopic   string
 
-	// JWT validation (v1.12.2).
+	// JWT validation (v1.12.2+).
 	// Set AUTH_JWT_SECRET to the same value as auth-service AUTH_JWT_SECRET.
-	// When empty, token validation is skipped (local dev / no-auth deployments).
-	JWTSecret string
-	JWTIssuer string
+	// For RS256, set AUTH_JWT_PUBLIC_KEY to the PEM-encoded RSA public key instead.
+	// When both are empty, token validation is skipped (local dev / no-auth deployments).
+	JWTSecret    string
+	JWTIssuer    string
+	JWTPublicKey string // PEM-encoded RSA public key for RS256 verification
 }
 
 func getenv(key, fallback string) string {
@@ -91,7 +93,8 @@ func Load() Config {
 		PubSubProject: getenv("PUBSUB_PROJECT", ""),
 		PubSubTopic:   getenv("PUBSUB_TOPIC", ""),
 
-		JWTSecret: getenv("AUTH_JWT_SECRET", ""),
-		JWTIssuer: getenv("AUTH_ISSUER", "auth-service"),
+		JWTSecret:    getenv("AUTH_JWT_SECRET", ""),
+		JWTIssuer:    getenv("AUTH_ISSUER", "auth-service"),
+		JWTPublicKey: getenv("AUTH_JWT_PUBLIC_KEY", ""),
 	}
 }

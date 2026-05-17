@@ -126,7 +126,7 @@ jobs:
             --max-instances 3 \
             --service-account "${{ secrets.GCP_SERVICE_ACCOUNT }}" \
             ${ENV_VARS:+--set-env-vars "${ENV_VARS}"} \
-            --set-secrets OBSERVABOARD_API_KEY=OBSERVABOARD_API_KEY:latest \
+            --set-secrets OBSERVABOARD_API_KEY=OBSERVABOARD_API_KEY:latest,AUTH_JWT_SECRET=AUTH_JWT_SECRET:latest \
             --quiet
 
       - name: Allow unauthenticated access

@@ -1,9 +1,12 @@
 package main
 
 import (
-	"fmt"
-	"log"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
+	"log/slog"
 	"net/http"
+	"os"
 
 	"github.com/rodmen07/go-gateway/internal/config"
 	"github.com/rodmen07/go-gateway/internal/health"
@@ -19,7 +22,31 @@ type route struct {
 }
 
 func main() {
+	// Use JSON structured logs so Cloud Logging can parse key/value fields.
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+
 	cfg := config.Load()
+
+	// Parse RSA public key when AUTH_JWT_PUBLIC_KEY is set (RS256 mode).
+	var jwtPublicKey *rsa.PublicKey
+	if cfg.JWTPublicKey != "" {
+		block, _ := pem.Decode([]byte(cfg.JWTPublicKey))
+		if block == nil {
+			slog.Error("AUTH_JWT_PUBLIC_KEY contains invalid PEM data")
+			os.Exit(1)
+		}
+		pub, err := x509.ParsePKIXPublicKey(block.Bytes)
+		if err != nil {
+			slog.Error("failed to parse AUTH_JWT_PUBLIC_KEY", "error", err)
+			os.Exit(1)
+		}
+		var ok bool
+		jwtPublicKey, ok = pub.(*rsa.PublicKey)
+		if !ok {
+			slog.Error("AUTH_JWT_PUBLIC_KEY is not an RSA public key")
+			os.Exit(1)
+		}
+	}
 
 	obs := observer.New(cfg.ObservaboardURL, cfg.ObservaboardAPIKey, cfg.PubSubProject, cfg.PubSubTopic)
 
@@ -73,17 +100,23 @@ func main() {
 		mux.Handle(r.prefix+"/", handler)
 		// Also match the prefix exactly (no trailing slash)
 		mux.Handle(r.prefix, handler)
-		fmt.Printf("  %-22s → %s\n", r.prefix+"/*", r.upstream)
+		slog.Info("route registered", "prefix", r.prefix, "upstream", r.upstream, "observed", r.observed)
 	}
 
 	addr := ":" + cfg.Port
-	log.Printf("go-gateway listening on %s (auth: %.0f rps | write: %.0f rps | read: %.0f rps | default: %.0f rps)\n",
-		addr, cfg.AuthRateLimitRPS, cfg.WriteRateLimitRPS, cfg.ReadRateLimitRPS, cfg.RateLimitRPS)
+	slog.Info("go-gateway listening",
+		"addr", addr,
+		"auth_rps", cfg.AuthRateLimitRPS,
+		"write_rps", cfg.WriteRateLimitRPS,
+		"read_rps", cfg.ReadRateLimitRPS,
+		"default_rps", cfg.RateLimitRPS,
+	)
 
 	// JWTAuth wraps the entire mux. /health and /api/auth are exempted so
 	// unauthenticated login and health-check requests still reach their handlers.
-	jwtAuth := middleware.JWTAuth(cfg.JWTSecret, cfg.JWTIssuer, []string{"/health", "/api/auth"})
+	jwtAuth := middleware.JWTAuth(cfg.JWTSecret, jwtPublicKey, cfg.JWTIssuer, []string{"/health", "/api/auth"})
 	if err := http.ListenAndServe(addr, jwtAuth(mux)); err != nil {
-		log.Fatalf("server error: %v", err)
+		slog.Error("server error", "error", err)
+		os.Exit(1)
 	}
 }
