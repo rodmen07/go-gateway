@@ -26,6 +26,11 @@ func New(upstream, prefixToStrip string, obs *observer.Observer) http.Handler {
 	}
 
 	rp := &httputil.ReverseProxy{
+		// RetryTransport retries GET/HEAD on transport errors (not 5xx).
+		// The circuit breaker middleware (WithCircuitBreaker) handles repeated
+		// 5xx responses by opening the circuit and returning 503 early.
+		Transport: &RetryTransport{MaxRetries: 2},
+
 		Director: func(req *http.Request) {
 			req.URL.Scheme = target.Scheme
 			req.URL.Host = target.Host

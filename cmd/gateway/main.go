@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/rodmen07/go-gateway/internal/config"
 	"github.com/rodmen07/go-gateway/internal/health"
@@ -89,6 +90,24 @@ func main() {
 	// Gateway health — no rate limiting or logging needed
 	mux.HandleFunc("/health", health.Handler())
 
+	// Upstream health fan-out — probes each service's /health and aggregates.
+	// Also exempt from JWT so monitoring systems can call it unauthenticated.
+	upstreamURLs := map[string]string{
+		"auth":          cfg.AuthURL,
+		"projects":      cfg.ProjectsURL,
+		"tasks":         cfg.TasksURL,
+		"accounts":      cfg.AccountsURL,
+		"contacts":      cfg.ContactsURL,
+		"opportunities": cfg.OpportunitiesURL,
+		"activities":    cfg.ActivitiesURL,
+		"automation":    cfg.AutomationURL,
+		"integrations":  cfg.IntegrationsURL,
+		"reporting":     cfg.ReportingURL,
+		"search":        cfg.SearchURL,
+		"events":        cfg.EventsURL,
+	}
+	mux.HandleFunc("/health/upstreams", health.UpstreamsHandler(upstreamURLs))
+
 	// Proxy routes — each wrapped with the full middleware chain
 	for _, r := range routes {
 		var routeObs *observer.Observer
@@ -96,7 +115,10 @@ func main() {
 			routeObs = obs
 		}
 		p := proxy.New(r.upstream, r.prefix, routeObs)
-		handler := middleware.Chain(p, cors, middleware.Logger, middleware.Traceparent, middleware.RequestID, rateLimiter)
+		// Each route gets its own circuit breaker: opens after 5 consecutive 5xx
+		// responses and allows a probe after 30 s.
+		cb := proxy.NewCircuitBreaker(5, 30*time.Second)
+		handler := middleware.Chain(proxy.WithCircuitBreaker(cb)(p), cors, middleware.Logger, middleware.Traceparent, middleware.RequestID, rateLimiter)
 		mux.Handle(r.prefix+"/", handler)
 		// Also match the prefix exactly (no trailing slash)
 		mux.Handle(r.prefix, handler)
@@ -115,7 +137,11 @@ func main() {
 	// JWTAuth wraps the entire mux. /health and /api/auth are exempted so
 	// unauthenticated login and health-check requests still reach their handlers.
 	jwtAuth := middleware.JWTAuth(cfg.JWTSecret, jwtPublicKey, cfg.JWTIssuer, []string{"/health", "/api/auth"})
-	if err := http.ListenAndServe(addr, jwtAuth(mux)); err != nil {
+	// SecurityHeaders and BlockScannerPaths are outermost so every response
+	// carries hardening headers and scanner probes are rejected before JWT
+	// validation or rate-limiting runs.
+	handler := middleware.SecurityHeaders(middleware.BlockScannerPaths(jwtAuth(mux)))
+	if err := http.ListenAndServe(addr, handler); err != nil {
 		slog.Error("server error", "error", err)
 		os.Exit(1)
 	}

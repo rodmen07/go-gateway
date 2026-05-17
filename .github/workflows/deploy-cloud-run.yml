@@ -124,6 +124,8 @@ jobs:
             --cpu 1 \
             --min-instances 0 \
             --max-instances 3 \
+            --concurrency 80 \
+            --execution-environment gen2 \
             --service-account "${{ secrets.GCP_SERVICE_ACCOUNT }}" \
             ${ENV_VARS:+--set-env-vars "${ENV_VARS}"} \
             --set-secrets OBSERVABOARD_API_KEY=OBSERVABOARD_API_KEY:latest,AUTH_JWT_SECRET=AUTH_JWT_SECRET:latest \
