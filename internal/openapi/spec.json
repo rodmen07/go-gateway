@@ -1,0 +1,599 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "InfraPortal API",
+    "version": "v1.15",
+    "description": "Complete API reference for InfraPortal — a 15-service CRM platform with portfolio tracking, real-time observability, and autonomous operations."
+  },
+  "servers": [
+    {
+      "url": "https://go-gateway-5gcrg4oiza-uc.a.run.app",
+      "description": "Production gateway (GCP Cloud Run)"
+    },
+    {
+      "url": "http://localhost:8080",
+      "description": "Local development (default gateway port)"
+    }
+  ],
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "JWT token issued by auth-service. Format: Authorization: Bearer <token>"
+      }
+    },
+    "schemas": {
+      "Account": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "owner_id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "domain": { "type": "string", "nullable": true },
+          "status": { "type": "string", "enum": ["active", "inactive", "churned"] },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreateAccountRequest": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 255 },
+          "domain": { "type": "string", "nullable": true },
+          "status": { "type": "string", "enum": ["active", "inactive", "churned"], "default": "active" }
+        }
+      },
+      "UpdateAccountRequest": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 255 },
+          "domain": { "type": "string", "nullable": true },
+          "status": { "type": "string", "enum": ["active", "inactive", "churned"] }
+        }
+      },
+      "ListAccountsResponse": {
+        "type": "object",
+        "properties": {
+          "data": { "type": "array", "items": { "$ref": "#/components/schemas/Account" } },
+          "total": { "type": "integer" },
+          "limit": { "type": "integer" },
+          "offset": { "type": "integer" }
+        }
+      },
+      "Contact": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "account_id": { "type": "string", "format": "uuid" },
+          "first_name": { "type": "string" },
+          "last_name": { "type": "string" },
+          "email": { "type": "string", "format": "email" },
+          "phone": { "type": "string", "nullable": true },
+          "lifecycle_stage": { "type": "string", "enum": ["lead", "subscriber", "customer", "churn"] },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreateContactRequest": {
+        "type": "object",
+        "required": ["account_id", "first_name", "last_name", "email"],
+        "properties": {
+          "account_id": { "type": "string", "format": "uuid" },
+          "first_name": { "type": "string" },
+          "last_name": { "type": "string" },
+          "email": { "type": "string", "format": "email" },
+          "phone": { "type": "string", "nullable": true },
+          "lifecycle_stage": { "type": "string", "enum": ["lead", "subscriber", "customer", "churn"], "default": "lead" }
+        }
+      },
+      "UpdateContactRequest": {
+        "type": "object",
+        "properties": {
+          "first_name": { "type": "string" },
+          "last_name": { "type": "string" },
+          "email": { "type": "string", "format": "email" },
+          "phone": { "type": "string", "nullable": true },
+          "lifecycle_stage": { "type": "string", "enum": ["lead", "subscriber", "customer", "churn"] }
+        }
+      },
+      "Activity": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "contact_id": { "type": "string", "format": "uuid" },
+          "activity_type": { "type": "string", "enum": ["call", "email", "meeting", "note", "task"] },
+          "subject": { "type": "string" },
+          "completed": { "type": "boolean" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Opportunity": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "account_id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "stage": { "type": "string", "enum": ["discovery", "proposal", "negotiation", "closed_won", "closed_lost"] },
+          "amount": { "type": "number", "nullable": true },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Project": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "description": { "type": "string", "nullable": true },
+          "status": { "type": "string", "enum": ["planning", "active", "on_hold", "completed", "cancelled"] },
+          "budget": { "type": "number", "nullable": true },
+          "start_date": { "type": "string", "format": "date", "nullable": true },
+          "target_end_date": { "type": "string", "format": "date", "nullable": true }
+        }
+      },
+      "Milestone": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "project_id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "description": { "type": "string", "nullable": true },
+          "due_date": { "type": "string", "format": "date", "nullable": true },
+          "status": { "type": "string", "enum": ["pending", "in_progress", "blocked", "done"] },
+          "sort_order": { "type": "integer" }
+        }
+      },
+      "Deliverable": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "milestone_id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "description": { "type": "string", "nullable": true },
+          "status": { "type": "string", "enum": ["pending", "in_progress", "blocked", "done"] },
+          "estimated_hours": { "type": "number", "nullable": true }
+        }
+      },
+      "SearchResult": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "entity_type": { "type": "string", "enum": ["account", "contact", "opportunity", "activity"] },
+          "entity_id": { "type": "string", "format": "uuid" },
+          "title": { "type": "string" },
+          "snippet": { "type": "string" }
+        }
+      },
+      "ApiError": {
+        "type": "object",
+        "properties": {
+          "code": { "type": "string" },
+          "message": { "type": "string" },
+          "details": { "type": "object", "nullable": true }
+        }
+      },
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "enum": ["ok", "degraded", "down"] }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Gateway health check",
+        "tags": ["System"],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Gateway is running",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HealthResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/upstreams": {
+      "get": {
+        "summary": "Upstream services health check",
+        "tags": ["System"],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Health status of all upstream services",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": { "$ref": "#/components/schemas/HealthResponse" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/accounts/api/v1/accounts": {
+      "get": {
+        "summary": "List accounts",
+        "tags": ["Accounts"],
+        "parameters": [
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50, "minimum": 1, "maximum": 100 } },
+          { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0 } },
+          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["active", "inactive", "churned"] } },
+          { "name": "q", "in": "query", "schema": { "type": "string", "description": "Full-text search by name" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of accounts",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ListAccountsResponse" }
+              }
+            }
+          },
+          "401": { "description": "Missing or invalid JWT token" },
+          "429": { "description": "Rate limit exceeded (auth: 5 rps)" }
+        }
+      },
+      "post": {
+        "summary": "Create account",
+        "tags": ["Accounts"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateAccountRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Account created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Account" }
+              }
+            }
+          },
+          "400": { "description": "Validation error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } } } },
+          "401": { "description": "Missing or invalid JWT token" },
+          "429": { "description": "Rate limit exceeded (write: 30 rps)" }
+        }
+      }
+    },
+    "/api/accounts/api/v1/accounts/{id}": {
+      "get": {
+        "summary": "Get account by ID",
+        "tags": ["Accounts"],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Account details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Account" }
+              }
+            }
+          },
+          "404": { "description": "Account not found" },
+          "401": { "description": "Missing or invalid JWT token" }
+        }
+      },
+      "patch": {
+        "summary": "Update account",
+        "tags": ["Accounts"],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateAccountRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Account updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Account" }
+              }
+            }
+          },
+          "404": { "description": "Account not found" },
+          "401": { "description": "Missing or invalid JWT token" },
+          "429": { "description": "Rate limit exceeded (write: 30 rps)" }
+        }
+      },
+      "delete": {
+        "summary": "Delete account",
+        "tags": ["Accounts"],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "204": { "description": "Account deleted" },
+          "404": { "description": "Account not found" },
+          "401": { "description": "Missing or invalid JWT token" },
+          "429": { "description": "Rate limit exceeded (write: 30 rps)" }
+        }
+      }
+    },
+    "/api/contacts/api/v1/contacts": {
+      "get": {
+        "summary": "List contacts",
+        "tags": ["Contacts"],
+        "parameters": [
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50 } },
+          { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0 } },
+          { "name": "account_id", "in": "query", "schema": { "type": "string", "format": "uuid" } },
+          { "name": "lifecycle_stage", "in": "query", "schema": { "type": "string", "enum": ["lead", "subscriber", "customer", "churn"] } }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of contacts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/Contact" } },
+                    "total": { "type": "integer" },
+                    "limit": { "type": "integer" },
+                    "offset": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Missing or invalid JWT token" }
+        }
+      },
+      "post": {
+        "summary": "Create contact",
+        "tags": ["Contacts"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateContactRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Contact created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Contact" }
+              }
+            }
+          },
+          "400": { "description": "Validation error" },
+          "401": { "description": "Missing or invalid JWT token" },
+          "429": { "description": "Rate limit exceeded (write: 30 rps)" }
+        }
+      }
+    },
+    "/api/contacts/api/v1/contacts/{id}": {
+      "get": {
+        "summary": "Get contact by ID",
+        "tags": ["Contacts"],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Contact details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Contact" }
+              }
+            }
+          },
+          "404": { "description": "Contact not found" },
+          "401": { "description": "Missing or invalid JWT token" }
+        }
+      },
+      "patch": {
+        "summary": "Update contact",
+        "tags": ["Contacts"],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateContactRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Contact updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Contact" }
+              }
+            }
+          },
+          "404": { "description": "Contact not found" },
+          "401": { "description": "Missing or invalid JWT token" },
+          "429": { "description": "Rate limit exceeded (write: 30 rps)" }
+        }
+      },
+      "delete": {
+        "summary": "Delete contact",
+        "tags": ["Contacts"],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "204": { "description": "Contact deleted" },
+          "404": { "description": "Contact not found" },
+          "401": { "description": "Missing or invalid JWT token" },
+          "429": { "description": "Rate limit exceeded (write: 30 rps)" }
+        }
+      }
+    },
+    "/api/search/api/v1/search": {
+      "get": {
+        "summary": "Cross-service full-text search",
+        "tags": ["Search"],
+        "parameters": [
+          { "name": "q", "in": "query", "required": true, "schema": { "type": "string", "description": "Search query (accounts, contacts, opportunities, activities)" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Search results grouped by entity type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/SearchResult" }
+                }
+              }
+            }
+          },
+          "401": { "description": "Missing or invalid JWT token" },
+          "429": { "description": "Rate limit exceeded (read: 60 rps)" }
+        }
+      }
+    },
+    "/api/v1/projects": {
+      "get": {
+        "summary": "List projects",
+        "tags": ["Projects"],
+        "parameters": [
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50 } },
+          { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of projects",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/Project" } },
+                    "total": { "type": "integer" },
+                    "limit": { "type": "integer" },
+                    "offset": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Missing or invalid JWT token" }
+        }
+      },
+      "post": {
+        "summary": "Create project",
+        "tags": ["Projects"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/Project" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Project created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Project" }
+              }
+            }
+          },
+          "401": { "description": "Missing or invalid JWT token" },
+          "429": { "description": "Rate limit exceeded (write: 30 rps)" }
+        }
+      }
+    },
+    "/api/v1/projects/{id}": {
+      "get": {
+        "summary": "Get project by ID",
+        "tags": ["Projects"],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Project details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Project" }
+              }
+            }
+          },
+          "404": { "description": "Project not found" },
+          "401": { "description": "Missing or invalid JWT token" }
+        }
+      },
+      "patch": {
+        "summary": "Update project",
+        "tags": ["Projects"],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/Project" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Project updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Project" }
+              }
+            }
+          },
+          "404": { "description": "Project not found" },
+          "401": { "description": "Missing or invalid JWT token" },
+          "429": { "description": "Rate limit exceeded (write: 30 rps)" }
+        }
+      },
+      "delete": {
+        "summary": "Delete project",
+        "tags": ["Projects"],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "204": { "description": "Project deleted" },
+          "404": { "description": "Project not found" },
+          "401": { "description": "Missing or invalid JWT token" },
+          "429": { "description": "Rate limit exceeded (write: 30 rps)" }
+        }
+      }
+    }
+  }
+}

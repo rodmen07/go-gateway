@@ -14,6 +14,7 @@ import (
 	"github.com/rodmen07/go-gateway/internal/health"
 	"github.com/rodmen07/go-gateway/internal/middleware"
 	"github.com/rodmen07/go-gateway/internal/observer"
+	"github.com/rodmen07/go-gateway/internal/openapi"
 	"github.com/rodmen07/go-gateway/internal/proxy"
 )
 
@@ -86,24 +87,36 @@ func main() {
 	}
 
 	rateLimiter := middleware.RateLimiter(cfg.RateLimitRPS, routeLimits)
-	if cfg.RedisURL != "" {
-		redisOpts, err := redis.ParseURL(cfg.RedisURL)
-		if err != nil {
-			// Backward-compatible fallback for plain host:port values.
-			redisOpts = &redis.Options{Addr: cfg.RedisURL}
+	if cfg.EnableRedisRateLimiter {
+		if cfg.RedisURL == "" {
+			slog.Warn("ENABLE_REDIS_RATE_LIMITER=true but REDIS_URL is empty; using in-memory limiter")
+		} else {
+			redisOpts, err := redis.ParseURL(cfg.RedisURL)
+			if err != nil {
+				// Backward-compatible fallback for plain host:port values.
+				redisOpts = &redis.Options{Addr: cfg.RedisURL}
+			}
+			redisClient := redis.NewClient(redisOpts)
+			rateLimiter = middleware.RedisRateLimiter(redisClient, cfg.RateLimitRPS, routeLimits)
+			slog.Info("redis rate limiter enabled", "redis_addr", cfg.RedisURL)
 		}
-		redisClient := redis.NewClient(redisOpts)
-		rateLimiter = middleware.RedisRateLimiter(redisClient, cfg.RateLimitRPS, routeLimits)
-		slog.Info("redis rate limiter enabled", "redis_addr", cfg.RedisURL)
 	}
 
-	responseCache := middleware.ResponseCache(time.Duration(cfg.CacheTTLSeconds)*time.Second, cfg.CacheMaxEntries)
+	responseCache := func(next http.Handler) http.Handler { return next }
+	if cfg.EnableResponseCache {
+		responseCache = middleware.ResponseCache(time.Duration(cfg.CacheTTLSeconds)*time.Second, cfg.CacheMaxEntries)
+		slog.Info("response cache enabled", "cache_ttl_seconds", cfg.CacheTTLSeconds, "cache_max_entries", cfg.CacheMaxEntries)
+	}
 	cors := middleware.CORS()
 
 	mux := http.NewServeMux()
 
 	// Gateway health — no rate limiting or logging needed
 	mux.HandleFunc("/health", health.Handler())
+
+	// OpenAPI spec and Swagger UI — public documentation, no auth required
+	mux.HandleFunc("/api/openapi.json", openapi.SpecHandler)
+	mux.HandleFunc("/api/docs", openapi.UIHandler)
 
 	// Upstream health fan-out — probes each service's /health and aggregates.
 	// Also exempt from JWT so monitoring systems can call it unauthenticated.
@@ -147,13 +160,15 @@ func main() {
 		"write_rps", cfg.WriteRateLimitRPS,
 		"read_rps", cfg.ReadRateLimitRPS,
 		"default_rps", cfg.RateLimitRPS,
+		"enable_redis_rate_limiter", cfg.EnableRedisRateLimiter,
+		"enable_response_cache", cfg.EnableResponseCache,
 		"cache_ttl_seconds", cfg.CacheTTLSeconds,
 		"cache_max_entries", cfg.CacheMaxEntries,
 	)
 
-	// JWTAuth wraps the entire mux. /health and /api/auth are exempted so
-	// unauthenticated login and health-check requests still reach their handlers.
-	jwtAuth := middleware.JWTAuth(cfg.JWTSecret, jwtPublicKey, cfg.JWTIssuer, []string{"/health", "/api/auth"})
+	// JWTAuth wraps the entire mux. /health, /api/auth, /api/openapi.json, and /api/docs are exempted so
+	// unauthenticated login, health-check, and documentation requests still reach their handlers.
+	jwtAuth := middleware.JWTAuth(cfg.JWTSecret, jwtPublicKey, cfg.JWTIssuer, []string{"/health", "/api/auth", "/api/openapi.json", "/api/docs"})
 	// SecurityHeaders and BlockScannerPaths are outermost so every response
 	// carries hardening headers and scanner probes are rejected before JWT
 	// validation or rate-limiting runs.
