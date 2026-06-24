@@ -25,31 +25,83 @@ fi
 
 FILTER_BASE="resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"${SERVICE_NAME}\" AND resource.labels.location=\"${REGION}\""
 
-monitoring_time_series_list() {
-  local out rc
-  if out=$(gcloud monitoring time-series list "$@" 2>&1); then
-    printf '%s\n' "$out"
-    return 0
+fetch_time_series_value() {
+  local filter="$1"
+  local per_series_aligner="$2"
+  local cross_series_reducer="$3"
+  local value_key="$4"
+  local end_time start_time token response
+  local time_window
+
+  time_window=$(python3 - <<'PY'
+from datetime import datetime, timedelta, timezone
+end = datetime.now(timezone.utc).replace(microsecond=0)
+start = end - timedelta(minutes=5)
+print(start.strftime("%Y-%m-%dT%H:%M:%SZ"))
+print(end.strftime("%Y-%m-%dT%H:%M:%SZ"))
+PY
+)
+  start_time=$(printf '%s\n' "$time_window" | sed -n '1p')
+  end_time=$(printf '%s\n' "$time_window" | sed -n '2p')
+  if [ -z "$start_time" ] || [ -z "$end_time" ]; then
+    echo "::error::Failed to build Cloud Monitoring query time window."
+    return 1
+  fi
+  if ! token=$(gcloud auth print-access-token); then
+    echo "::error::Failed to obtain Google Cloud access token."
+    return 1
+  fi
+  if [ -z "$token" ]; then
+    echo "::error::Google Cloud access token is empty."
+    return 1
   fi
 
-  rc=$?
-  if echo "$out" | grep -q "Invalid choice: 'time-series'"; then
-    gcloud components install beta --quiet
-    gcloud beta monitoring time-series list "$@"
-    return $?
+  if ! response=$(curl --silent --show-error --fail --get \
+    --oauth2-bearer "$token" \
+    --data-urlencode "filter=${filter}" \
+    --data-urlencode "interval.startTime=${start_time}" \
+    --data-urlencode "interval.endTime=${end_time}" \
+    --data-urlencode "aggregation.alignmentPeriod=300s" \
+    --data-urlencode "aggregation.perSeriesAligner=${per_series_aligner}" \
+    --data-urlencode "aggregation.crossSeriesReducer=${cross_series_reducer}" \
+    --data-urlencode "pageSize=1" \
+    "https://monitoring.googleapis.com/v3/projects/${PROJECT_ID}/timeSeries"); then
+    echo "::error::Failed to query Cloud Monitoring time series for filter: ${filter}"
+    return 1
   fi
 
-  echo "$out" >&2
-  return $rc
+  RESPONSE_JSON="$response" python3 - "$value_key" <<'PY'
+import json
+import os
+import sys
+
+key = sys.argv[1]
+try:
+    data = json.loads(os.environ["RESPONSE_JSON"])
+except json.JSONDecodeError:
+    print("::error::Invalid JSON response from Cloud Monitoring API.", file=sys.stderr)
+    sys.exit(1)
+
+series = data.get("timeSeries", [])
+if not series:
+    print("0")
+    sys.exit(0)
+
+points = series[0].get("points", [])
+if not points:
+    print("0")
+    sys.exit(0)
+
+value = points[0].get("value", {})
+print(value.get(key, "0"))
+PY
 }
 
-total_requests=$(monitoring_time_series_list \
-  --project="$PROJECT_ID" \
-  --filter="metric.type=\"run.googleapis.com/request_count\" AND ${FILTER_BASE}" \
-  --aggregation.alignment-period=300s \
-  --aggregation.per-series-aligner=ALIGN_SUM \
-  --aggregation.cross-series-reducer=REDUCE_SUM \
-  --format='value(points[0].value.int64Value)' | head -n1)
+total_requests=$(fetch_time_series_value \
+  "metric.type=\"run.googleapis.com/request_count\" AND ${FILTER_BASE}" \
+  "ALIGN_SUM" \
+  "REDUCE_SUM" \
+  "int64Value")
 
 total_requests=${total_requests:-0}
 if ! [[ "$total_requests" =~ ^[0-9]+$ ]]; then
@@ -61,31 +113,27 @@ if [ "$total_requests" -lt "$MIN_REQUESTS" ]; then
   exit 1
 fi
 
-error_requests=$(monitoring_time_series_list \
-  --project="$PROJECT_ID" \
-  --filter="metric.type=\"run.googleapis.com/request_count\" AND metric.labels.response_code_class=\"500\" AND ${FILTER_BASE}" \
-  --aggregation.alignment-period=300s \
-  --aggregation.per-series-aligner=ALIGN_SUM \
-  --aggregation.cross-series-reducer=REDUCE_SUM \
-  --format='value(points[0].value.int64Value)' | head -n1)
+error_requests=$(fetch_time_series_value \
+  "metric.type=\"run.googleapis.com/request_count\" AND metric.labels.response_code_class=\"500\" AND ${FILTER_BASE}" \
+  "ALIGN_SUM" \
+  "REDUCE_SUM" \
+  "int64Value")
 
 error_requests=${error_requests:-0}
 if ! [[ "$error_requests" =~ ^[0-9]+$ ]]; then
   error_requests=0
 fi
 
-p99_seconds=$(monitoring_time_series_list \
-  --project="$PROJECT_ID" \
-  --filter="metric.type=\"run.googleapis.com/request_latencies\" AND ${FILTER_BASE}" \
-  --aggregation.alignment-period=300s \
-  --aggregation.per-series-aligner=ALIGN_PERCENTILE_99 \
-  --aggregation.cross-series-reducer=REDUCE_MAX \
-  --format='value(points[0].value.doubleValue)' | head -n1)
+p99_seconds=$(fetch_time_series_value \
+  "metric.type=\"run.googleapis.com/request_latencies\" AND ${FILTER_BASE}" \
+  "ALIGN_PERCENTILE_99" \
+  "REDUCE_MAX" \
+  "doubleValue")
 
 p99_seconds=${p99_seconds:-0}
 
 export ERR="$error_requests" TOTAL="$total_requests" P99_S="$p99_seconds"
-error_rate_pct=$(python - <<'PY'
+error_rate_pct=$(python3 - <<'PY'
 import os
 err = float(os.environ['ERR'])
 total = float(os.environ['TOTAL'])
@@ -93,7 +141,7 @@ print((err / total) * 100.0 if total > 0 else 100.0)
 PY
 )
 
-p99_ms=$(python - <<'PY'
+p99_ms=$(python3 - <<'PY'
 import os
 s = float(os.environ['P99_S'] or 0)
 print(s * 1000.0)
@@ -103,7 +151,7 @@ PY
 echo "Canary metrics: total=${total_requests} errors=${error_requests} error_rate_pct=${error_rate_pct} p99_ms=${p99_ms}"
 
 export ACTUAL_ERR_PCT="$error_rate_pct" MAX_ERR_PCT="$MAX_5XX_RATE_PCT" ACTUAL_P99_MS="$p99_ms" MAX_P99_MS="$MAX_P99_MS"
-python - <<'PY'
+python3 - <<'PY'
 import os
 actual_err = float(os.environ['ACTUAL_ERR_PCT'])
 max_err = float(os.environ['MAX_ERR_PCT'])
