@@ -36,7 +36,7 @@ fetch_time_series_value() {
   start_time=$(date -u -d '5 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
   token=$(gcloud auth print-access-token)
 
-  response=$(curl --silent --show-error --fail --get \
+  if ! response=$(curl --silent --show-error --fail --get \
     --oauth2-bearer "$token" \
     --data-urlencode "filter=${filter}" \
     --data-urlencode "interval.startTime=${start_time}" \
@@ -45,7 +45,10 @@ fetch_time_series_value() {
     --data-urlencode "aggregation.perSeriesAligner=${per_series_aligner}" \
     --data-urlencode "aggregation.crossSeriesReducer=${cross_series_reducer}" \
     --data-urlencode "pageSize=1" \
-    "https://monitoring.googleapis.com/v3/projects/${PROJECT_ID}/timeSeries")
+    "https://monitoring.googleapis.com/v3/projects/${PROJECT_ID}/timeSeries"); then
+    echo "::error::Failed to query Cloud Monitoring time series."
+    return 1
+  fi
 
   RESPONSE_JSON="$response" python - "$value_key" <<'PY'
 import json
@@ -56,12 +59,12 @@ key = sys.argv[1]
 data = json.loads(os.environ["RESPONSE_JSON"])
 series = data.get("timeSeries", [])
 if not series:
-    print("")
+    print("0")
     raise SystemExit(0)
 
 points = series[0].get("points", [])
 if not points:
-    print("")
+    print("0")
     raise SystemExit(0)
 
 value = points[0].get("value", {})
