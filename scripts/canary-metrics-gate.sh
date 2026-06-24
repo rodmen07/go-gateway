@@ -31,9 +31,18 @@ fetch_time_series_value() {
   local cross_series_reducer="$3"
   local value_key="$4"
   local end_time start_time token response
+  local time_window
 
-  end_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-  start_time=$(date -u -d '5 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+  time_window=$(python - <<'PY'
+from datetime import datetime, timedelta, timezone
+end = datetime.now(timezone.utc).replace(microsecond=0)
+start = end - timedelta(minutes=5)
+print(start.strftime("%Y-%m-%dT%H:%M:%SZ"))
+print(end.strftime("%Y-%m-%dT%H:%M:%SZ"))
+PY
+)
+  start_time=$(printf '%s\n' "$time_window" | sed -n '1p')
+  end_time=$(printf '%s\n' "$time_window" | sed -n '2p')
   token=$(gcloud auth print-access-token)
 
   if ! response=$(curl --silent --show-error --fail --get \
@@ -60,15 +69,15 @@ data = json.loads(os.environ["RESPONSE_JSON"])
 series = data.get("timeSeries", [])
 if not series:
     print("0")
-    raise SystemExit(0)
+    sys.exit(0)
 
 points = series[0].get("points", [])
 if not points:
     print("0")
-    raise SystemExit(0)
+    sys.exit(0)
 
 value = points[0].get("value", {})
-print(value.get(key, ""))
+print(value.get(key, "0"))
 PY
 }
 
