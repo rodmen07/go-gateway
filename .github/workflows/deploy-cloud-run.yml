@@ -187,6 +187,9 @@ jobs:
 
           # Deploy with --no-traffic so the new revision is reachable via its
           # direct URL for smoke testing but serves 0% of production traffic.
+          # --tag canary assigns a named traffic tag to the revision, which
+          # gives it a stable revision-specific URL (status.url) required by
+          # the smoke-test steps below.
           gcloud run deploy "${{ env.SERVICE_NAME }}" \
             --image "$IMAGE" \
             --region "${{ env.GCP_REGION }}" \
@@ -202,6 +205,7 @@ jobs:
             ${ENV_VARS:+--set-env-vars "${ENV_VARS}"} \
             --set-secrets OBSERVABOARD_API_KEY=OBSERVABOARD_API_KEY:latest,AUTH_JWT_SECRET=AUTH_JWT_SECRET:latest \
             --no-traffic \
+            --tag canary \
             --quiet
 
           # Capture the name of the revision that was just created.
@@ -316,6 +320,7 @@ jobs:
           gcloud run services update-traffic "${{ env.SERVICE_NAME }}" \
             --region="${{ env.GCP_REGION }}" \
             --to-latest \
+            --remove-tags canary \
             --quiet
           echo "Traffic: 100% -> ${{ steps.deploy.outputs.new_revision }}"
 

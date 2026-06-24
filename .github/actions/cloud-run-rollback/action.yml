@@ -41,6 +41,7 @@ runs:
         gcloud run services update-traffic "${{ inputs.service_name }}" \
           --region="${{ inputs.region }}" \
           --to-revisions="${{ inputs.stable_revision }}=100" \
+          --remove-tags canary \
           --quiet
 
         echo "rolled_back=true" >> "$GITHUB_OUTPUT"
