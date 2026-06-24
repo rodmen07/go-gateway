@@ -17,6 +17,7 @@ on:
 env:
   GCP_REGION: us-central1
   GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  ARTIFACT_REGISTRY_REPO: microservices
   SERVICE_NAME: go-gateway
   IMAGE_NAME: go-gateway
   CACHE_TTL_SECONDS: ${{ vars.GATEWAY_CACHE_TTL_SECONDS }}
@@ -63,10 +64,24 @@ jobs:
         if: steps.config.outputs.enabled == 'true'
         run: gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev --quiet
 
+      - name: Ensure Artifact Registry repository exists
+        if: steps.config.outputs.enabled == 'true'
+        run: |
+          if ! gcloud artifacts repositories describe "${{ env.ARTIFACT_REGISTRY_REPO }}" \
+              --location="${{ env.GCP_REGION }}" \
+              --project="${{ env.GCP_PROJECT_ID }}" 2>/dev/null; then
+            echo "Repository not found, creating..."
+            gcloud artifacts repositories create "${{ env.ARTIFACT_REGISTRY_REPO }}" \
+              --repository-format=docker \
+              --location="${{ env.GCP_REGION }}" \
+              --project="${{ env.GCP_PROJECT_ID }}" \
+              --description="Docker repository for microservices images"
+          fi
+
       - name: Build and push image
         if: steps.config.outputs.enabled == 'true'
         run: |
-          IMAGE="${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/microservices/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          IMAGE="${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
           docker build -t "$IMAGE" .
           docker push "$IMAGE"
           echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
