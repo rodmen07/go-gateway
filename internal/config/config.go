@@ -11,13 +11,15 @@ type Config struct {
 
 	// Rate limiting — defaults applied when env vars are absent.
 	// RateLimitRPS is the fallback for any route not matched by a tier.
-	RateLimitRPS      float64 // default 15  (unclassified routes)
-	AuthRateLimitRPS  float64 // default 5   (/api/auth/*)
-	WriteRateLimitRPS float64 // default 30  (CRM mutation routes)
-	ReadRateLimitRPS  float64 // default 60  (reporting, search, events)
-	RedisURL          string  // optional redis:// URL for distributed limiter
-	CacheTTLSeconds   int     // response cache TTL for read endpoints
-	CacheMaxEntries   int     // max in-memory response cache entries
+	RateLimitRPS           float64 // default 15  (unclassified routes)
+	AuthRateLimitRPS       float64 // default 5   (/api/auth/*)
+	WriteRateLimitRPS      float64 // default 30  (CRM mutation routes)
+	ReadRateLimitRPS       float64 // default 60  (reporting, search, events)
+	EnableRedisRateLimiter bool    // staged rollout toggle for Redis limiter
+	EnableResponseCache    bool    // staged rollout toggle for response cache
+	RedisURL               string  // optional redis:// URL for distributed limiter
+	CacheTTLSeconds        int     // response cache TTL for read endpoints
+	CacheMaxEntries        int     // max in-memory response cache entries
 
 	// Upstream service URLs
 	AuthURL          string
@@ -75,18 +77,32 @@ func parseInt(key string, fallback int) int {
 	return v
 }
 
+func parseBool(key string, fallback bool) bool {
+	v := getenv(key, "")
+	if v == "" {
+		return fallback
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return fallback
+	}
+	return b
+}
+
 // Load reads configuration from environment variables with production defaults.
 func Load() Config {
 	return Config{
 		Port: getenv("PORT", "8080"),
 
-		RateLimitRPS:      parseRPS("RATE_LIMIT_RPS", 15),
-		AuthRateLimitRPS:  parseRPS("RATE_LIMIT_AUTH_RPS", 5),
-		WriteRateLimitRPS: parseRPS("RATE_LIMIT_WRITE_RPS", 30),
-		ReadRateLimitRPS:  parseRPS("RATE_LIMIT_READ_RPS", 60),
-		RedisURL:          getenv("REDIS_URL", ""),
-		CacheTTLSeconds:   parseInt("CACHE_TTL_SECONDS", 5),
-		CacheMaxEntries:   parseInt("CACHE_MAX_ENTRIES", 500),
+		RateLimitRPS:           parseRPS("RATE_LIMIT_RPS", 15),
+		AuthRateLimitRPS:       parseRPS("RATE_LIMIT_AUTH_RPS", 5),
+		WriteRateLimitRPS:      parseRPS("RATE_LIMIT_WRITE_RPS", 30),
+		ReadRateLimitRPS:       parseRPS("RATE_LIMIT_READ_RPS", 60),
+		EnableRedisRateLimiter: parseBool("ENABLE_REDIS_RATE_LIMITER", false),
+		EnableResponseCache:    parseBool("ENABLE_RESPONSE_CACHE", false),
+		RedisURL:               getenv("REDIS_URL", ""),
+		CacheTTLSeconds:        parseInt("CACHE_TTL_SECONDS", 5),
+		CacheMaxEntries:        parseInt("CACHE_MAX_ENTRIES", 500),
 
 		AuthURL:          getenv("AUTH_URL", "http://127.0.0.1:8082"),
 		ProjectsURL:      getenv("PROJECTS_URL", "http://127.0.0.1:8083"),
