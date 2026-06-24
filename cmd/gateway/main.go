@@ -51,6 +51,21 @@ func main() {
 		}
 	}
 
+	// Fail-fast guard: when neither AUTH_JWT_SECRET nor AUTH_JWT_PUBLIC_KEY is
+	// configured, JWTAuth runs as a no-op and every request bypasses
+	// authentication. That is only ever acceptable for local development. In any
+	// other environment a missing-secret misconfiguration must stop the process
+	// rather than silently expose all upstream services. Operators can opt into
+	// the insecure no-auth mode explicitly with ALLOW_INSECURE_NO_AUTH=true.
+	if cfg.JWTSecret == "" && jwtPublicKey == nil {
+		if os.Getenv("ALLOW_INSECURE_NO_AUTH") == "true" {
+			slog.Warn("authentication is DISABLED: no AUTH_JWT_SECRET or AUTH_JWT_PUBLIC_KEY configured and ALLOW_INSECURE_NO_AUTH=true; all requests bypass JWT validation (local development only)")
+		} else {
+			slog.Error("refusing to start: neither AUTH_JWT_SECRET nor AUTH_JWT_PUBLIC_KEY is configured; set one to enable JWT validation, or set ALLOW_INSECURE_NO_AUTH=true to explicitly run an unauthenticated gateway (local development only)")
+			os.Exit(1)
+		}
+	}
+
 	obs := observer.New(cfg.ObservaboardURL, cfg.ObservaboardAPIKey, cfg.PubSubProject, cfg.PubSubTopic)
 
 	routes := []route{

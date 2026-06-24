@@ -28,6 +28,12 @@ go.work.sum
 .env
 *.env.local
 
+# Editor crash-recovery / temp files
+*.tmp
+*.tmp.*
+*.bak
+*.orig
+
 # Built binary
 go-gateway
 /go-gateway

@@ -41,9 +41,20 @@ jobs:
       - name: go test with coverage
         run: go test -race -count=1 -coverprofile=coverage.out -covermode=atomic ./...
 
-      - name: Upload coverage
+      - name: Vulnerability scan (govulncheck)
+        # Informational: govulncheck reports reachable advisories plus Go stdlib
+        # advisories that track the toolchain patch level, so it stays
+        # non-blocking to avoid failing unrelated PRs when upstream publishes a
+        # new advisory. Findings are visible in the job log for triage.
+        continue-on-error: true
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+      - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
           files: ./coverage.out
           flags: go-gateway
+          name: go-gateway-coverage
           fail_ci_if_error: false

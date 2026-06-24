@@ -1,9 +1,9 @@
 module github.com/rodmen07/go-gateway
 
-go 1.22
+go 1.24
 
 require (
-	github.com/redis/go-redis/v9 v9.6.1
+	github.com/redis/go-redis/v9 v9.6.3
 	golang.org/x/time v0.9.0
 )
 
