@@ -33,7 +33,7 @@ fetch_time_series_value() {
   local end_time start_time token response
   local time_window
 
-  time_window=$(python - <<'PY'
+  time_window=$(python3 - <<'PY'
 from datetime import datetime, timedelta, timezone
 end = datetime.now(timezone.utc).replace(microsecond=0)
 start = end - timedelta(minutes=5)
@@ -70,7 +70,7 @@ PY
     return 1
   fi
 
-  RESPONSE_JSON="$response" python - "$value_key" <<'PY'
+  RESPONSE_JSON="$response" python3 - "$value_key" <<'PY'
 import json
 import os
 import sys
@@ -133,7 +133,7 @@ p99_seconds=$(fetch_time_series_value \
 p99_seconds=${p99_seconds:-0}
 
 export ERR="$error_requests" TOTAL="$total_requests" P99_S="$p99_seconds"
-error_rate_pct=$(python - <<'PY'
+error_rate_pct=$(python3 - <<'PY'
 import os
 err = float(os.environ['ERR'])
 total = float(os.environ['TOTAL'])
@@ -141,7 +141,7 @@ print((err / total) * 100.0 if total > 0 else 100.0)
 PY
 )
 
-p99_ms=$(python - <<'PY'
+p99_ms=$(python3 - <<'PY'
 import os
 s = float(os.environ['P99_S'] or 0)
 print(s * 1000.0)
@@ -151,7 +151,7 @@ PY
 echo "Canary metrics: total=${total_requests} errors=${error_requests} error_rate_pct=${error_rate_pct} p99_ms=${p99_ms}"
 
 export ACTUAL_ERR_PCT="$error_rate_pct" MAX_ERR_PCT="$MAX_5XX_RATE_PCT" ACTUAL_P99_MS="$p99_ms" MAX_P99_MS="$MAX_P99_MS"
-python - <<'PY'
+python3 - <<'PY'
 import os
 actual_err = float(os.environ['ACTUAL_ERR_PCT'])
 max_err = float(os.environ['MAX_ERR_PCT'])
