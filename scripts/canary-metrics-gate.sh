@@ -55,7 +55,7 @@ PY
     --data-urlencode "aggregation.crossSeriesReducer=${cross_series_reducer}" \
     --data-urlencode "pageSize=1" \
     "https://monitoring.googleapis.com/v3/projects/${PROJECT_ID}/timeSeries"); then
-    echo "::error::Failed to query Cloud Monitoring time series."
+    echo "::error::Failed to query Cloud Monitoring time series for filter: ${filter}"
     return 1
   fi
 
