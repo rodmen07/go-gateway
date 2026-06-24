@@ -26,11 +26,20 @@ fi
 FILTER_BASE="resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"${SERVICE_NAME}\" AND resource.labels.location=\"${REGION}\""
 
 monitoring_time_series_list() {
-  if gcloud monitoring time-series list --help >/dev/null 2>&1; then
-    gcloud monitoring time-series list "$@"
-  else
-    gcloud beta monitoring time-series list "$@"
+  local out rc
+  if out=$(gcloud monitoring time-series list "$@" 2>&1); then
+    printf '%s\n' "$out"
+    return 0
   fi
+
+  rc=$?
+  if echo "$out" | grep -q "Invalid choice: 'time-series'"; then
+    gcloud beta monitoring time-series list "$@"
+    return
+  fi
+
+  echo "$out" >&2
+  return "$rc"
 }
 
 total_requests=$(monitoring_time_series_list \
