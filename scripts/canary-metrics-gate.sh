@@ -47,9 +47,16 @@ PY
     echo "::error::Failed to build Cloud Monitoring query time window."
     return 1
   fi
-  token=$(gcloud auth print-access-token)
+  if ! token=$(gcloud auth print-access-token); then
+    echo "::error::Failed to obtain Google Cloud access token."
+    return 1
+  fi
+  if [ -z "$token" ]; then
+    echo "::error::Google Cloud access token is empty."
+    return 1
+  fi
 
-  if ! response=$(curl --silent --fail --get \
+  if ! response=$(curl --silent --show-error --fail --get \
     --oauth2-bearer "$token" \
     --data-urlencode "filter=${filter}" \
     --data-urlencode "interval.startTime=${start_time}" \
