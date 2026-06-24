@@ -43,9 +43,13 @@ PY
 )
   start_time=$(printf '%s\n' "$time_window" | sed -n '1p')
   end_time=$(printf '%s\n' "$time_window" | sed -n '2p')
+  if [ -z "$start_time" ] || [ -z "$end_time" ]; then
+    echo "::error::Failed to build Cloud Monitoring query time window."
+    return 1
+  fi
   token=$(gcloud auth print-access-token)
 
-  if ! response=$(curl --silent --show-error --fail --get \
+  if ! response=$(curl --silent --fail --get \
     --oauth2-bearer "$token" \
     --data-urlencode "filter=${filter}" \
     --data-urlencode "interval.startTime=${start_time}" \
@@ -65,7 +69,12 @@ import os
 import sys
 
 key = sys.argv[1]
-data = json.loads(os.environ["RESPONSE_JSON"])
+try:
+    data = json.loads(os.environ["RESPONSE_JSON"])
+except json.JSONDecodeError:
+    print("::error::Invalid JSON response from Cloud Monitoring API.", file=sys.stderr)
+    sys.exit(1)
+
 series = data.get("timeSeries", [])
 if not series:
     print("0")
