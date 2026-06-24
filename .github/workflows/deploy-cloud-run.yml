@@ -232,15 +232,14 @@ jobs:
         id: smoke_zero
         if: steps.config.outputs.enabled == 'true'
         run: |
-          # The new revision exposes a direct URL of the form:
-          #   https://<revision>---<hash>-<region>.a.run.app
-          # Use the service URL for health (revision URL requires auth); we probe
-          # the stable URL to confirm the running service is still healthy while
-          # the new revision is warming up.
-          SERVICE_URL=$(gcloud run services describe "${{ env.SERVICE_NAME }}" \
+          # Test the new revision directly via its revision-specific URL so the
+          # smoke test validates the newly-built code, not the stable revision
+          # that is still serving 100% of traffic.  The service-level IAM binding
+          # (allUsers → roles/run.invoker) applied above covers revision URLs too.
+          REV_URL=$(gcloud run revisions describe "${{ steps.deploy.outputs.new_revision }}" \
             --region="${{ env.GCP_REGION }}" \
             --format='value(status.url)')
-          bash scripts/smoke-test.sh "$SERVICE_URL"
+          bash scripts/smoke-test.sh "$REV_URL"
 
       - name: Shift 10% traffic to canary
         if: steps.config.outputs.enabled == 'true' && steps.stable.outputs.revision != ''
@@ -259,10 +258,13 @@ jobs:
         id: smoke_canary
         if: steps.config.outputs.enabled == 'true' && steps.stable.outputs.revision != ''
         run: |
-          SERVICE_URL=$(gcloud run services describe "${{ env.SERVICE_NAME }}" \
+          # Validate the canary revision directly so the smoke check always hits
+          # the new code, regardless of which revision the service URL happens to
+          # route to (the stable revision still handles 90% of traffic at this stage).
+          REV_URL=$(gcloud run revisions describe "${{ steps.deploy.outputs.new_revision }}" \
             --region="${{ env.GCP_REGION }}" \
             --format='value(status.url)')
-          bash scripts/smoke-test.sh "$SERVICE_URL"
+          bash scripts/smoke-test.sh "$REV_URL"
 
       - name: Canary metrics gate (5xx and p99)
         id: canary_metrics
