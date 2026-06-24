@@ -35,7 +35,7 @@ monitoring_time_series_list() {
   rc=$?
   if echo "$out" | grep -q "Invalid choice: 'time-series'"; then
     gcloud beta monitoring time-series list "$@"
-    return
+    return $?
   fi
 
   echo "$out" >&2
