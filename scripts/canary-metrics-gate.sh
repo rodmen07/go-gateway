@@ -25,7 +25,24 @@ fi
 
 FILTER_BASE="resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"${SERVICE_NAME}\" AND resource.labels.location=\"${REGION}\""
 
-total_requests=$(gcloud monitoring time-series list \
+monitoring_time_series_list() {
+  local out rc
+  if out=$(gcloud monitoring time-series list "$@" 2>&1); then
+    printf '%s\n' "$out"
+    return 0
+  fi
+
+  rc=$?
+  if echo "$out" | grep -q "Invalid choice: 'time-series'"; then
+    gcloud beta monitoring time-series list "$@"
+    return $?
+  fi
+
+  echo "$out" >&2
+  return $rc
+}
+
+total_requests=$(monitoring_time_series_list \
   --project="$PROJECT_ID" \
   --filter="metric.type=\"run.googleapis.com/request_count\" AND ${FILTER_BASE}" \
   --aggregation.alignment-period=300s \
@@ -43,7 +60,7 @@ if [ "$total_requests" -lt "$MIN_REQUESTS" ]; then
   exit 1
 fi
 
-error_requests=$(gcloud monitoring time-series list \
+error_requests=$(monitoring_time_series_list \
   --project="$PROJECT_ID" \
   --filter="metric.type=\"run.googleapis.com/request_count\" AND metric.labels.response_code_class=\"500\" AND ${FILTER_BASE}" \
   --aggregation.alignment-period=300s \
@@ -56,7 +73,7 @@ if ! [[ "$error_requests" =~ ^[0-9]+$ ]]; then
   error_requests=0
 fi
 
-p99_seconds=$(gcloud monitoring time-series list \
+p99_seconds=$(monitoring_time_series_list \
   --project="$PROJECT_ID" \
   --filter="metric.type=\"run.googleapis.com/request_latencies\" AND ${FILTER_BASE}" \
   --aggregation.alignment-period=300s \
