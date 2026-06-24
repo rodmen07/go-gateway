@@ -127,6 +127,8 @@ jobs:
               --region="${{ env.GCP_REGION }}" \
               --format='value(status.url)' 2>/dev/null || echo ""
           }
+          echo "AUTH_URL=$(get_url auth-service)" >> "$GITHUB_ENV"
+          echo "PROJECTS_URL=$(get_url projects-service)" >> "$GITHUB_ENV"
           echo "TASKS_URL=$(get_url backend-service)" >> "$GITHUB_ENV"
           echo "ACCOUNTS_URL=$(get_url accounts-service)" >> "$GITHUB_ENV"
           echo "CONTACTS_URL=$(get_url contacts-service)" >> "$GITHUB_ENV"
@@ -165,6 +167,8 @@ jobs:
               fi
             fi
           }
+          append_if_set AUTH_URL          "$AUTH_URL"
+          append_if_set PROJECTS_URL      "$PROJECTS_URL"
           append_if_set TASKS_URL         "$TASKS_URL"
           append_if_set ACCOUNTS_URL      "$ACCOUNTS_URL"
           append_if_set CONTACTS_URL      "$CONTACTS_URL"

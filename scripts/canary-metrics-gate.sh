@@ -34,6 +34,7 @@ monitoring_time_series_list() {
 
   rc=$?
   if echo "$out" | grep -q "Invalid choice: 'time-series'"; then
+    gcloud components install beta --quiet
     gcloud beta monitoring time-series list "$@"
     return $?
   fi
