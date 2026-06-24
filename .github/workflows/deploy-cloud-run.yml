@@ -236,9 +236,28 @@ jobs:
           # smoke test validates the newly-built code, not the stable revision
           # that is still serving 100% of traffic.  The service-level IAM binding
           # (allUsers → roles/run.invoker) applied above covers revision URLs too.
-          REV_URL=$(gcloud run revisions describe "${{ steps.deploy.outputs.new_revision }}" \
-            --region="${{ env.GCP_REGION }}" \
-            --format='value(status.url)')
+          REV_NAME="${{ steps.deploy.outputs.new_revision }}"
+          REV_URL=""
+          for attempt in $(seq 1 12); do
+            REV_URL=$(gcloud run revisions describe "$REV_NAME" \
+              --region="${{ env.GCP_REGION }}" \
+              --format='value(status.url)' 2>/dev/null || true)
+            if [ -n "$REV_URL" ]; then
+              break
+            fi
+            echo "Revision URL not ready for $REV_NAME (attempt $attempt/12); retrying in 5s..."
+            sleep 5
+          done
+
+          if [ -z "$REV_URL" ]; then
+            echo "::error::Could not resolve revision URL for $REV_NAME."
+            gcloud run revisions describe "$REV_NAME" \
+              --region="${{ env.GCP_REGION }}" \
+              --format='yaml(metadata.name,status.url,status.conditions)' || true
+            exit 1
+          fi
+
+          echo "Testing new revision URL: $REV_URL"
           bash scripts/smoke-test.sh "$REV_URL"
 
       - name: Shift 10% traffic to canary
@@ -261,9 +280,28 @@ jobs:
           # Validate the canary revision directly so the smoke check always hits
           # the new code, regardless of which revision the service URL happens to
           # route to (the stable revision still handles 90% of traffic at this stage).
-          REV_URL=$(gcloud run revisions describe "${{ steps.deploy.outputs.new_revision }}" \
-            --region="${{ env.GCP_REGION }}" \
-            --format='value(status.url)')
+          REV_NAME="${{ steps.deploy.outputs.new_revision }}"
+          REV_URL=""
+          for attempt in $(seq 1 12); do
+            REV_URL=$(gcloud run revisions describe "$REV_NAME" \
+              --region="${{ env.GCP_REGION }}" \
+              --format='value(status.url)' 2>/dev/null || true)
+            if [ -n "$REV_URL" ]; then
+              break
+            fi
+            echo "Revision URL not ready for $REV_NAME (attempt $attempt/12); retrying in 5s..."
+            sleep 5
+          done
+
+          if [ -z "$REV_URL" ]; then
+            echo "::error::Could not resolve revision URL for $REV_NAME."
+            gcloud run revisions describe "$REV_NAME" \
+              --region="${{ env.GCP_REGION }}" \
+              --format='yaml(metadata.name,status.url,status.conditions)' || true
+            exit 1
+          fi
+
+          echo "Testing canary revision URL: $REV_URL"
           bash scripts/smoke-test.sh "$REV_URL"
 
       - name: Canary metrics gate (5xx and p99)
