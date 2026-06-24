@@ -25,31 +25,55 @@ fi
 
 FILTER_BASE="resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"${SERVICE_NAME}\" AND resource.labels.location=\"${REGION}\""
 
-monitoring_time_series_list() {
-  local out rc
-  if out=$(gcloud monitoring time-series list "$@" 2>&1); then
-    printf '%s\n' "$out"
-    return 0
-  fi
+fetch_time_series_value() {
+  local filter="$1"
+  local per_series_aligner="$2"
+  local cross_series_reducer="$3"
+  local value_key="$4"
+  local end_time start_time token response
 
-  rc=$?
-  if echo "$out" | grep -q "Invalid choice: 'time-series'"; then
-    gcloud components install beta --quiet
-    gcloud beta monitoring time-series list "$@"
-    return $?
-  fi
+  end_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  start_time=$(date -u -d '5 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+  token=$(gcloud auth print-access-token)
 
-  echo "$out" >&2
-  return $rc
+  response=$(curl --silent --show-error --fail --get \
+    --oauth2-bearer "$token" \
+    --data-urlencode "filter=${filter}" \
+    --data-urlencode "interval.startTime=${start_time}" \
+    --data-urlencode "interval.endTime=${end_time}" \
+    --data-urlencode "aggregation.alignmentPeriod=300s" \
+    --data-urlencode "aggregation.perSeriesAligner=${per_series_aligner}" \
+    --data-urlencode "aggregation.crossSeriesReducer=${cross_series_reducer}" \
+    --data-urlencode "pageSize=1" \
+    "https://monitoring.googleapis.com/v3/projects/${PROJECT_ID}/timeSeries")
+
+  RESPONSE_JSON="$response" python - "$value_key" <<'PY'
+import json
+import os
+import sys
+
+key = sys.argv[1]
+data = json.loads(os.environ["RESPONSE_JSON"])
+series = data.get("timeSeries", [])
+if not series:
+    print("")
+    raise SystemExit(0)
+
+points = series[0].get("points", [])
+if not points:
+    print("")
+    raise SystemExit(0)
+
+value = points[0].get("value", {})
+print(value.get(key, ""))
+PY
 }
 
-total_requests=$(monitoring_time_series_list \
-  --project="$PROJECT_ID" \
-  --filter="metric.type=\"run.googleapis.com/request_count\" AND ${FILTER_BASE}" \
-  --aggregation.alignment-period=300s \
-  --aggregation.per-series-aligner=ALIGN_SUM \
-  --aggregation.cross-series-reducer=REDUCE_SUM \
-  --format='value(points[0].value.int64Value)' | head -n1)
+total_requests=$(fetch_time_series_value \
+  "metric.type=\"run.googleapis.com/request_count\" AND ${FILTER_BASE}" \
+  "ALIGN_SUM" \
+  "REDUCE_SUM" \
+  "int64Value")
 
 total_requests=${total_requests:-0}
 if ! [[ "$total_requests" =~ ^[0-9]+$ ]]; then
@@ -61,26 +85,22 @@ if [ "$total_requests" -lt "$MIN_REQUESTS" ]; then
   exit 1
 fi
 
-error_requests=$(monitoring_time_series_list \
-  --project="$PROJECT_ID" \
-  --filter="metric.type=\"run.googleapis.com/request_count\" AND metric.labels.response_code_class=\"500\" AND ${FILTER_BASE}" \
-  --aggregation.alignment-period=300s \
-  --aggregation.per-series-aligner=ALIGN_SUM \
-  --aggregation.cross-series-reducer=REDUCE_SUM \
-  --format='value(points[0].value.int64Value)' | head -n1)
+error_requests=$(fetch_time_series_value \
+  "metric.type=\"run.googleapis.com/request_count\" AND metric.labels.response_code_class=\"500\" AND ${FILTER_BASE}" \
+  "ALIGN_SUM" \
+  "REDUCE_SUM" \
+  "int64Value")
 
 error_requests=${error_requests:-0}
 if ! [[ "$error_requests" =~ ^[0-9]+$ ]]; then
   error_requests=0
 fi
 
-p99_seconds=$(monitoring_time_series_list \
-  --project="$PROJECT_ID" \
-  --filter="metric.type=\"run.googleapis.com/request_latencies\" AND ${FILTER_BASE}" \
-  --aggregation.alignment-period=300s \
-  --aggregation.per-series-aligner=ALIGN_PERCENTILE_99 \
-  --aggregation.cross-series-reducer=REDUCE_MAX \
-  --format='value(points[0].value.doubleValue)' | head -n1)
+p99_seconds=$(fetch_time_series_value \
+  "metric.type=\"run.googleapis.com/request_latencies\" AND ${FILTER_BASE}" \
+  "ALIGN_PERCENTILE_99" \
+  "REDUCE_MAX" \
+  "doubleValue")
 
 p99_seconds=${p99_seconds:-0}
 
