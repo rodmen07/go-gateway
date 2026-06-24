@@ -12,6 +12,7 @@ on:
       - ".github/workflows/deploy-cloud-run.yml"
       - ".github/actions/cloud-run-rollback/action.yml"
       - "scripts/smoke-test.sh"
+      - "scripts/canary-metrics-gate.sh"
   workflow_dispatch:
 
 env:
@@ -20,8 +21,13 @@ env:
   ARTIFACT_REGISTRY_REPO: microservices
   SERVICE_NAME: go-gateway
   IMAGE_NAME: go-gateway
+  ENABLE_REDIS_RATE_LIMITER: ${{ vars.GATEWAY_ENABLE_REDIS_RATE_LIMITER }}
+  ENABLE_RESPONSE_CACHE: ${{ vars.GATEWAY_ENABLE_RESPONSE_CACHE }}
   CACHE_TTL_SECONDS: ${{ vars.GATEWAY_CACHE_TTL_SECONDS }}
   CACHE_MAX_ENTRIES: ${{ vars.GATEWAY_CACHE_MAX_ENTRIES }}
+  CANARY_MAX_5XX_RATE_PCT: ${{ vars.GATEWAY_CANARY_MAX_5XX_RATE_PCT }}
+  CANARY_MAX_P99_MS: ${{ vars.GATEWAY_CANARY_MAX_P99_MS }}
+  CANARY_MIN_REQUESTS: ${{ vars.GATEWAY_CANARY_MIN_REQUESTS }}
 
 jobs:
   deploy:
@@ -49,6 +55,45 @@ jobs:
           fi
           echo "enabled=true" >> "$GITHUB_OUTPUT"
 
+      - name: Validate rollout guardrails
+        if: steps.config.outputs.enabled == 'true'
+        run: |
+          ENABLE_REDIS="${{ env.ENABLE_REDIS_RATE_LIMITER }}"
+          ENABLE_CACHE="${{ env.ENABLE_RESPONSE_CACHE }}"
+          CACHE_TTL="${{ env.CACHE_TTL_SECONDS }}"
+          CACHE_MAX="${{ env.CACHE_MAX_ENTRIES }}"
+
+          [ -z "$ENABLE_REDIS" ] && ENABLE_REDIS="false"
+          [ -z "$ENABLE_CACHE" ] && ENABLE_CACHE="false"
+
+          if [ "$ENABLE_REDIS" != "true" ] && [ "$ENABLE_REDIS" != "false" ]; then
+            echo "::error::GATEWAY_ENABLE_REDIS_RATE_LIMITER must be true or false."
+            exit 1
+          fi
+
+          if [ "$ENABLE_CACHE" != "true" ] && [ "$ENABLE_CACHE" != "false" ]; then
+            echo "::error::GATEWAY_ENABLE_RESPONSE_CACHE must be true or false."
+            exit 1
+          fi
+
+          if [ "$ENABLE_REDIS" = "true" ] && [ -z "${{ secrets.GO_GATEWAY_REDIS_URL }}" ]; then
+            echo "::error::Redis rollout enabled but GO_GATEWAY_REDIS_URL secret is empty."
+            exit 1
+          fi
+
+          if [ "$ENABLE_CACHE" = "true" ]; then
+            if [ -z "$CACHE_TTL" ] || [ "$CACHE_TTL" -lt 1 ] || [ "$CACHE_TTL" -gt 60 ]; then
+              echo "::error::CACHE_TTL_SECONDS must be between 1 and 60 when cache rollout is enabled."
+              exit 1
+            fi
+            if [ -z "$CACHE_MAX" ] || [ "$CACHE_MAX" -lt 100 ] || [ "$CACHE_MAX" -gt 5000 ]; then
+              echo "::error::CACHE_MAX_ENTRIES must be between 100 and 5000 when cache rollout is enabled."
+              exit 1
+            fi
+          fi
+
+          echo "Rollout guardrails validated. redis=$ENABLE_REDIS cache=$ENABLE_CACHE"
+
       - name: Authenticate to Google Cloud
         if: steps.config.outputs.enabled == 'true'
         uses: google-github-actions/auth@v2
@@ -63,20 +108,6 @@ jobs:
       - name: Configure Docker for Artifact Registry
         if: steps.config.outputs.enabled == 'true'
         run: gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev --quiet
-
-      - name: Ensure Artifact Registry repository exists
-        if: steps.config.outputs.enabled == 'true'
-        run: |
-          if ! gcloud artifacts repositories describe "${{ env.ARTIFACT_REGISTRY_REPO }}" \
-              --location="${{ env.GCP_REGION }}" \
-              --project="${{ env.GCP_PROJECT_ID }}" 2>/dev/null; then
-            echo "Repository not found, creating..."
-            gcloud artifacts repositories create "${{ env.ARTIFACT_REGISTRY_REPO }}" \
-              --repository-format=docker \
-              --location="${{ env.GCP_REGION }}" \
-              --project="${{ env.GCP_PROJECT_ID }}" \
-              --description="Docker repository for microservices images"
-          fi
 
       - name: Build and push image
         if: steps.config.outputs.enabled == 'true'
@@ -144,6 +175,12 @@ jobs:
           append_if_set SEARCH_URL        "$SEARCH_URL"
           append_if_set EVENTS_URL        "$EVENTS_URL"
           append_if_set OBSERVABOARD_URL  "$OBSERVABOARD_URL"
+          ENABLE_REDIS="${{ env.ENABLE_REDIS_RATE_LIMITER }}"
+          ENABLE_CACHE="${{ env.ENABLE_RESPONSE_CACHE }}"
+          [ -z "$ENABLE_REDIS" ] && ENABLE_REDIS="false"
+          [ -z "$ENABLE_CACHE" ] && ENABLE_CACHE="false"
+          append_if_set ENABLE_REDIS_RATE_LIMITER "$ENABLE_REDIS"
+          append_if_set ENABLE_RESPONSE_CACHE "$ENABLE_CACHE"
           append_if_set REDIS_URL         "${{ secrets.GO_GATEWAY_REDIS_URL }}"
           append_if_set CACHE_TTL_SECONDS "${{ env.CACHE_TTL_SECONDS }}"
           append_if_set CACHE_MAX_ENTRIES "${{ env.CACHE_MAX_ENTRIES }}"
@@ -227,8 +264,14 @@ jobs:
             --format='value(status.url)')
           bash scripts/smoke-test.sh "$SERVICE_URL"
 
+      - name: Canary metrics gate (5xx and p99)
+        id: canary_metrics
+        if: steps.config.outputs.enabled == 'true' && steps.stable.outputs.revision != ''
+        run: |
+          bash scripts/canary-metrics-gate.sh "${{ env.SERVICE_NAME }}" "${{ env.GCP_REGION }}"
+
       - name: Shift 100% traffic to new revision
-        if: steps.config.outputs.enabled == 'true'
+        if: steps.config.outputs.enabled == 'true' && (steps.canary_metrics.outcome == 'success' || steps.stable.outputs.revision == '')
         run: |
           gcloud run services update-traffic "${{ env.SERVICE_NAME }}" \
             --region="${{ env.GCP_REGION }}" \
@@ -259,7 +302,7 @@ jobs:
         if: >
           steps.config.outputs.enabled == 'true' &&
           steps.stable.outputs.revision != '' &&
-          (failure() && (steps.smoke_zero.outcome == 'failure' || steps.smoke_canary.outcome == 'failure'))
+          (failure() && (steps.smoke_zero.outcome == 'failure' || steps.smoke_canary.outcome == 'failure' || steps.canary_metrics.outcome == 'failure'))
         uses: ./.github/actions/cloud-run-rollback
         with:
           service_name: ${{ env.SERVICE_NAME }}
