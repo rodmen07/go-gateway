@@ -39,7 +39,7 @@ monitoring_time_series_list() {
   fi
 
   echo "$out" >&2
-  return "$rc"
+  return $rc
 }
 
 total_requests=$(monitoring_time_series_list \
